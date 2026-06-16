@@ -5,7 +5,7 @@ mod error;
 mod util;
 
 use clap::Parser;
-use cli::{Cli, ColorMode, Command};
+use cli::{Cli, ColorMode, Command, ProjectLang};
 use miette::{IntoDiagnostic, Result};
 use tracing_subscriber::EnvFilter;
 use util::paths::OrdoPaths;
@@ -21,7 +21,15 @@ fn main() -> Result<()> {
     match cli.command {
         Command::New { name, lib, lang, no_git } => {
             let cwd = std::env::current_dir().into_diagnostic()?;
-            cli::new::run(&cwd, &name, lib, lang, no_git)?;
+            match name {
+                Some(name) => {
+                    let lang = lang.unwrap_or(ProjectLang::Cpp);
+                    cli::new::run(&cwd, &name, lib, lang, no_git)?;
+                }
+                None => {
+                    cli::new::run_interactive(&cwd, no_git)?;
+                }
+            }
         }
         Command::Init => {
             let cwd = std::env::current_dir().into_diagnostic()?;

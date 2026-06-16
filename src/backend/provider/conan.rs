@@ -285,6 +285,10 @@ fn parse_pc_content(
                     frameworks.push(fw.to_string());
                     i += 2;
                     continue;
+                } else if let Some(rest) = token.strip_prefix("-Wl,-weak_framework,")
+                    .or_else(|| token.strip_prefix("-Wl,-framework,"))
+                {
+                    frameworks.push(rest.to_string());
                 }
                 i += 1;
             }
@@ -445,6 +449,20 @@ Libs: -L/opt/conan/lib -lspdlog
         assert_eq!(inc, vec![PathBuf::from("/opt/conan/include")]);
         assert_eq!(lib_dirs, vec![PathBuf::from("/opt/conan/lib")]);
         assert_eq!(libs, vec!["spdlog"]);
+    }
+
+    #[test]
+    fn parse_pc_content_weak_framework() {
+        let content = "Libs: -lSDL3 -Wl,-weak_framework,CoreHaptics -framework Cocoa\n";
+        let mut inc = Vec::new();
+        let mut lib_dirs = Vec::new();
+        let mut libs = Vec::new();
+        let mut fws = Vec::new();
+        parse_pc_content(content, &mut inc, &mut lib_dirs, &mut libs, &mut fws);
+
+        assert_eq!(libs, vec!["SDL3"]);
+        assert!(fws.contains(&"CoreHaptics".to_string()));
+        assert!(fws.contains(&"Cocoa".to_string()));
     }
 
     #[test]

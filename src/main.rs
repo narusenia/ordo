@@ -1,9 +1,10 @@
 mod cli;
 mod core;
+mod error;
 mod util;
 
 use clap::Parser;
-use cli::{Cli, Command};
+use cli::{Cli, ColorMode, Command};
 use miette::Result;
 use tracing_subscriber::EnvFilter;
 use util::paths::OrdoPaths;
@@ -12,10 +13,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     init_tracing(cli.verbose);
-
-    if cli.no_color {
-        owo_colors::set_override(false);
-    }
+    init_color(cli.color);
 
     let _paths = OrdoPaths::resolve();
 
@@ -96,6 +94,14 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn init_color(mode: ColorMode) {
+    match mode {
+        ColorMode::Always => owo_colors::set_override(true),
+        ColorMode::Never => owo_colors::set_override(false),
+        ColorMode::Auto => {} // owo-colors auto-detects TTY
+    }
 }
 
 fn init_tracing(verbosity: u8) {

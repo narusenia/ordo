@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -7,13 +7,20 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    /// Disable colored output
-    #[arg(long, global = true, env = "ORDO_COLOR")]
-    pub no_color: bool,
+    /// Control colored output
+    #[arg(long, global = true, default_value = "auto", env = "ORDO_COLOR")]
+    pub color: ColorMode,
 
     /// Verbose output (-v for commands, -vv for debug)
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ColorMode {
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Subcommand)]

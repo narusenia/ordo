@@ -116,13 +116,19 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions) -> CompileFlags
         (0, true)
     };
 
+    let mut include_dirs = Vec::new();
+    let include_path = PathBuf::from("include");
+    if include_path.exists() {
+        include_dirs.push(include_path);
+    }
+
     CompileFlags {
         cpp_standard: manifest.language.cpp.or(Some(CppStandard::Cpp20)),
         c_standard: manifest.language.c,
         opt_level,
         debug,
         defines: Vec::new(),
-        include_dirs: Vec::new(),
+        include_dirs,
     }
 }
 
@@ -167,8 +173,6 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>) -> Result<()> {
     tracing::info!("running: ninja -C {}", build_dir.display());
 
     let status = cmd
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
         .status()
         .into_diagnostic()
         .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;

@@ -38,6 +38,29 @@ impl ConanProvider {
                  help: install Conan 2.x — https://conan.io/downloads"
             );
         }
+        self.ensure_default_profile()?;
+        Ok(())
+    }
+
+    fn ensure_default_profile(&self) -> Result<()> {
+        let output = self.runner.run(
+            "conan",
+            &["profile", "path", "default"],
+            None,
+        )?;
+        if !output.status.success() {
+            let detect = self.runner.run(
+                "conan",
+                &["profile", "detect"],
+                None,
+            )?;
+            if !detect.status.success() {
+                bail!(
+                    "conan: failed to create default profile\n  \
+                     help: run `conan profile detect` manually"
+                );
+            }
+        }
         Ok(())
     }
 

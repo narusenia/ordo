@@ -1,4 +1,4 @@
-# TASK-014: Dependency CLI Commands (add, update, tree)
+# TASK-014: Dependency CLI Commands (add, update, tree) ✅
 
 - **Related Requirements**: REQ-DEPS-009
 - **Milestone**: M2 — Dependency Management

@@ -58,8 +58,6 @@ impl VcpkgProvider {
             "git",
             &[
                 "clone",
-                "--depth",
-                "1",
                 "https://github.com/microsoft/vcpkg.git",
                 &dest.display().to_string(),
             ],
@@ -108,6 +106,9 @@ impl VcpkgProvider {
         let triplet = Self::host_triplet();
 
         let has_versioned = packages.iter().any(|(_, v)| v.is_some());
+        if has_versioned {
+            self.ensure_full_clone(&root)?;
+        }
         let baseline = if has_versioned {
             self.get_baseline(&root)
         } else {
@@ -192,6 +193,17 @@ impl VcpkgProvider {
             libs,
             frameworks,
         })
+    }
+
+    fn ensure_full_clone(&self, root: &Path) -> Result<()> {
+        if root.join(".git").join("shallow").exists() {
+            self.runner.run(
+                "git",
+                &["-C", &root.display().to_string(), "fetch", "--unshallow"],
+                None,
+            )?;
+        }
+        Ok(())
     }
 
     fn get_baseline(&self, root: &Path) -> Option<String> {

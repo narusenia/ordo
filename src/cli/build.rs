@@ -1,6 +1,7 @@
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::conan::ConanProvider;
+use crate::backend::provider::git::{GitDepSpec, GitProvider};
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
@@ -195,6 +196,31 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                     }
                     Err(e) => {
                         style::finish_spinner_error(&spinner, "Failed", &format!("{name} (conan)"));
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Git => {
+                let git_url = spec.git.as_deref().unwrap();
+                let git_spec = GitDepSpec::from_dep(
+                    git_url,
+                    spec.tag.as_deref(),
+                    spec.branch.as_deref(),
+                    spec.rev.as_deref(),
+                );
+                let spinner = style::create_spinner(&format!("Fetching {name} (git)…"));
+                let provider = GitProvider::new();
+                match provider.resolve_git(name, &git_spec) {
+                    Ok(resolved) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Fetched",
+                            &format!("{name} {} (git)", resolved.version),
+                        );
+                        provider.fetch_git(name, &git_spec)?
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (git)"));
                         return Err(e);
                     }
                 }

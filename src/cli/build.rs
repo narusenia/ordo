@@ -1,6 +1,9 @@
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
-use crate::core::manifest::{CompilerKind, CppStandard, Manifest, PackageType};
+use crate::backend::provider::pkgconfig::PkgConfigProvider;
+use crate::backend::provider::system::SystemProvider;
+use crate::backend::provider::{FetchedDep, Provider};
+use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
 use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
@@ -49,8 +52,9 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
         bail!("no source files found in src/");
     }
 
-    let compile_flags = build_compile_flags(&manifest, opts);
-    let link_flags = LinkFlags::default();
+    let fetched_deps = fetch_dependencies(&manifest)?;
+    let compile_flags = build_compile_flags(&manifest, opts, &fetched_deps);
+    let link_flags = build_link_flags(&fetched_deps);
 
     let project_root = std::env::current_dir().into_diagnostic()?;
 
@@ -116,7 +120,33 @@ fn auto_detect_compiler() -> CompilerKind {
         .unwrap_or(CompilerKind::Clang)
 }
 
-fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions) -> CompileFlags {
+fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
+    let mut fetched = Vec::new();
+
+    for (name, spec) in &manifest.dependencies {
+        let dep = match spec.source_kind() {
+            DependencySource::Provider(ProviderKind::PkgConfig) => {
+                let provider = PkgConfigProvider;
+                let resolved = provider.resolve(name, spec.version.as_deref())?;
+                style::success("Resolved", &format!("{name} v{} (pkg-config)", resolved.version));
+                provider.fetch(&resolved)?
+            }
+            DependencySource::Provider(ProviderKind::System) => {
+                let provider = SystemProvider;
+                let resolved = provider.resolve(name, spec.version.as_deref())?;
+                style::success("Resolved", &format!("{name} (system)"));
+                provider.fetch(&resolved)?
+            }
+            // Other providers (vcpkg, conan, git, registry) not yet implemented
+            _ => continue,
+        };
+        fetched.push(dep);
+    }
+
+    Ok(fetched)
+}
+
+fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions, deps: &[FetchedDep]) -> CompileFlags {
     let (opt_level, debug) = if opts.release {
         (3, false)
     } else {
@@ -129,6 +159,10 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions) -> CompileFlags
         include_dirs.push(include_path);
     }
 
+    for dep in deps {
+        include_dirs.extend(dep.include_dirs.iter().cloned());
+    }
+
     CompileFlags {
         cpp_standard: manifest.language.cpp.or(Some(CppStandard::Cpp20)),
         c_standard: manifest.language.c,
@@ -136,6 +170,22 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions) -> CompileFlags
         debug,
         defines: Vec::new(),
         include_dirs,
+    }
+}
+
+fn build_link_flags(deps: &[FetchedDep]) -> LinkFlags {
+    let mut lib_dirs = Vec::new();
+    let mut libs = Vec::new();
+
+    for dep in deps {
+        lib_dirs.extend(dep.lib_dirs.iter().cloned());
+        libs.extend(dep.libs.iter().cloned());
+    }
+
+    LinkFlags {
+        lib_dirs,
+        libs,
+        linker: None,
     }
 }
 

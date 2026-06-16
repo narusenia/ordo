@@ -68,6 +68,11 @@ impl Compiler for GccCompiler {
             args.push(format!("-l{lib}"));
         }
 
+        for fw in &flags.frameworks {
+            args.push("-framework".to_string());
+            args.push(fw.clone());
+        }
+
         args
     }
 

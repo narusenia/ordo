@@ -34,6 +34,7 @@ impl Default for CompileFlags {
 pub struct LinkFlags {
     pub lib_dirs: Vec<PathBuf>,
     pub libs: Vec<String>,
+    pub frameworks: Vec<String>,
     pub linker: Option<LinkerKind>,
 }
 

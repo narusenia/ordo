@@ -165,6 +165,8 @@ impl VcpkgProvider {
             Vec::new()
         };
 
+        let frameworks = scan_pc_frameworks(&installed);
+
         if include_dirs.is_empty() && libs.is_empty() {
             bail!(
                 "vcpkg: package '{name}' installed but no headers or libraries found at {}\n  \
@@ -178,6 +180,7 @@ impl VcpkgProvider {
             include_dirs,
             lib_dirs,
             libs,
+            frameworks,
         })
     }
 
@@ -276,6 +279,45 @@ fn scan_lib_names(lib_dir: &Path) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+fn scan_pc_frameworks(installed_dir: &Path) -> Vec<String> {
+    let pc_dir = installed_dir.join("lib").join("pkgconfig");
+    let Ok(entries) = std::fs::read_dir(&pc_dir) else {
+        return Vec::new();
+    };
+
+    let mut frameworks = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("pc") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(libs) = line.strip_prefix("Libs:") {
+                let tokens: Vec<&str> = libs.split_whitespace().collect();
+                let mut i = 0;
+                while i < tokens.len() {
+                    if tokens[i] == "-framework"
+                        && let Some(&name) = tokens.get(i + 1)
+                    {
+                        frameworks.push(name.to_string());
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    frameworks.sort();
+    frameworks.dedup();
+    frameworks
 }
 
 // --- Command runner abstraction for testing ---
@@ -504,4 +546,49 @@ mod tests {
         let _ = provider.bootstrap(&dest);
     }
 
+    #[test]
+    fn scan_pc_frameworks_extracts_frameworks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installed = tmp.path();
+        let pc_dir = installed.join("lib").join("pkgconfig");
+        std::fs::create_dir_all(&pc_dir).unwrap();
+        std::fs::write(
+            pc_dir.join("glfw3.pc"),
+            "Name: GLFW\nLibs: -L${libdir} -lglfw3 -framework Cocoa -framework IOKit\n",
+        )
+        .unwrap();
+
+        let fws = scan_pc_frameworks(installed);
+        assert_eq!(fws, vec!["Cocoa", "IOKit"]);
+    }
+
+    #[test]
+    fn scan_pc_frameworks_empty_without_pc_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fws = scan_pc_frameworks(tmp.path());
+        assert!(fws.is_empty());
+    }
+
+    #[test]
+    fn parse_installed_includes_frameworks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let triplet = VcpkgProvider::host_triplet();
+        let installed = root.join("installed").join(triplet);
+        let include_dir = installed.join("include");
+        let lib_dir = installed.join("lib");
+        let pc_dir = lib_dir.join("pkgconfig");
+        std::fs::create_dir_all(&include_dir).unwrap();
+        std::fs::create_dir_all(&pc_dir).unwrap();
+        std::fs::write(lib_dir.join("libglfw3.a"), b"").unwrap();
+        std::fs::write(
+            pc_dir.join("glfw3.pc"),
+            "Name: GLFW\nLibs: -lglfw3 -framework Cocoa -framework CoreFoundation\n",
+        )
+        .unwrap();
+
+        let provider = VcpkgProvider::new();
+        let fetched = provider.parse_installed(root, "glfw3", triplet).unwrap();
+        assert_eq!(fetched.frameworks, vec!["Cocoa", "CoreFoundation"]);
+    }
 }

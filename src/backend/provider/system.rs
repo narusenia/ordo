@@ -26,6 +26,7 @@ impl Provider for SystemProvider {
             include_dirs: Vec::new(),
             lib_dirs: Vec::new(),
             libs: vec![dep.name.clone()],
+            frameworks: Vec::new(),
         })
     }
 }

@@ -20,6 +20,7 @@ pub struct FetchedDep {
     pub include_dirs: Vec<PathBuf>,
     pub lib_dirs: Vec<PathBuf>,
     pub libs: Vec<String>,
+    pub frameworks: Vec<String>,
 }
 
 pub trait Provider {

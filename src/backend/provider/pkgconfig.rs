@@ -74,11 +74,14 @@ impl Provider for PkgConfigProvider {
         let include_dirs = parse_include_dirs(&cflags);
         let (lib_dirs, lib_names) = parse_libs(&libs);
 
+        let frameworks = parse_frameworks(&libs);
+
         Ok(FetchedDep {
             name: dep.name.clone(),
             include_dirs,
             lib_dirs,
             libs: lib_names,
+            frameworks,
         })
     }
 }
@@ -88,6 +91,23 @@ fn parse_include_dirs(cflags: &str) -> Vec<PathBuf> {
         .split_whitespace()
         .filter_map(|flag| flag.strip_prefix("-I").map(PathBuf::from))
         .collect()
+}
+
+fn parse_frameworks(libs: &str) -> Vec<String> {
+    let tokens: Vec<&str> = libs.split_whitespace().collect();
+    let mut frameworks = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        if tokens[i] == "-framework"
+            && let Some(&name) = tokens.get(i + 1)
+        {
+            frameworks.push(name.to_string());
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    frameworks
 }
 
 fn parse_libs(libs: &str) -> (Vec<PathBuf>, Vec<String>) {
@@ -149,5 +169,23 @@ mod tests {
         let (dirs, names) = parse_libs("");
         assert!(dirs.is_empty());
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn parse_frameworks_from_libs_line() {
+        let fws = parse_frameworks("-L/usr/lib -lglfw3 -framework Cocoa -framework IOKit -framework CoreFoundation");
+        assert_eq!(fws, vec!["Cocoa", "IOKit", "CoreFoundation"]);
+    }
+
+    #[test]
+    fn parse_frameworks_empty() {
+        let fws = parse_frameworks("-L/usr/lib -lz");
+        assert!(fws.is_empty());
+    }
+
+    #[test]
+    fn parse_frameworks_no_input() {
+        let fws = parse_frameworks("");
+        assert!(fws.is_empty());
     }
 }

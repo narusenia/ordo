@@ -74,8 +74,8 @@ fn main() -> Result<()> {
         Command::Watch { .. } => {
             eprintln!("ordo watch: not yet implemented");
         }
-        Command::Add { provider, name, version } => {
-            cli::add::run(&provider, &name, version.as_deref())?;
+        Command::Add { spec, provider } => {
+            cli::add::run(&spec, provider.as_deref())?;
         }
         Command::Update { .. } => {
             eprintln!("ordo update: not yet implemented");

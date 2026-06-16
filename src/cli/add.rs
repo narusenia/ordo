@@ -3,13 +3,61 @@ use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::Provider;
 use crate::util::style;
+use dialoguer::Select;
 use miette::{bail, IntoDiagnostic, Result};
 use std::path::Path;
 use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
-pub fn run(provider: &str, name: &str, version: Option<&str>) -> Result<()> {
+const PROVIDERS: &[&str] = &["vcpkg", "pkg-config", "system", "conan", "path", "git"];
+
+struct ParsedSpec {
+    provider: Option<String>,
+    name: String,
+    version: Option<String>,
+}
+
+fn parse_spec(spec: &str) -> ParsedSpec {
+    let (provider, rest) = if let Some((p, r)) = spec.split_once(':') {
+        (Some(p.to_string()), r)
+    } else {
+        (None, spec)
+    };
+
+    let (name, version) = if let Some((n, v)) = rest.split_once('@') {
+        (n.to_string(), Some(v.to_string()))
+    } else {
+        (rest.to_string(), None)
+    };
+
+    ParsedSpec { provider, name, version }
+}
+
+fn prompt_provider() -> Result<String> {
+    let idx = Select::new()
+        .with_prompt("Provider")
+        .items(PROVIDERS)
+        .default(0)
+        .interact()
+        .into_diagnostic()?;
+    Ok(PROVIDERS[idx].to_string())
+}
+
+pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
-    run_inner(&dir, provider, name, version, true)
+    let parsed = parse_spec(spec);
+
+    let provider = provider_flag
+        .map(|s| s.to_string())
+        .or(parsed.provider)
+        .map_or_else(prompt_provider, Ok)?;
+
+    run_inner(
+        &dir,
+        &provider,
+        &parsed.name,
+        parsed.version.as_deref(),
+        true,
+    )
 }
 
 fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, resolve: bool) -> Result<()> {
@@ -89,7 +137,7 @@ fn build_dep_value(provider: &str, version: Option<&str>) -> Result<Value> {
             Ok(Value::InlineTable(table))
         }
         "git" => {
-            let url = version.ok_or_else(|| miette::miette!("git provider requires --version <url>"))?;
+            let url = version.ok_or_else(|| miette::miette!("git provider requires a URL as version (e.g. raylib@https://...)"))?;
             let mut table = InlineTable::new();
             table.insert("git", url.into());
             Ok(Value::InlineTable(table))
@@ -118,6 +166,38 @@ type = "executable"
         )
         .unwrap();
         tmp
+    }
+
+    #[test]
+    fn parse_spec_name_only() {
+        let s = parse_spec("raylib");
+        assert_eq!(s.name, "raylib");
+        assert!(s.provider.is_none());
+        assert!(s.version.is_none());
+    }
+
+    #[test]
+    fn parse_spec_name_at_version() {
+        let s = parse_spec("raylib@6.0");
+        assert_eq!(s.name, "raylib");
+        assert_eq!(s.version.as_deref(), Some("6.0"));
+        assert!(s.provider.is_none());
+    }
+
+    #[test]
+    fn parse_spec_provider_colon_name() {
+        let s = parse_spec("vcpkg:raylib");
+        assert_eq!(s.provider.as_deref(), Some("vcpkg"));
+        assert_eq!(s.name, "raylib");
+        assert!(s.version.is_none());
+    }
+
+    #[test]
+    fn parse_spec_provider_colon_name_at_version() {
+        let s = parse_spec("vcpkg:raylib@6");
+        assert_eq!(s.provider.as_deref(), Some("vcpkg"));
+        assert_eq!(s.name, "raylib");
+        assert_eq!(s.version.as_deref(), Some("6"));
     }
 
     #[test]

@@ -39,6 +39,7 @@ fn main() -> Result<()> {
                 jobs,
                 target,
                 no_cache,
+                verbose: cli.verbose,
             };
             cli::build::run(&opts)?;
         }
@@ -63,8 +64,8 @@ fn main() -> Result<()> {
         Command::Watch { .. } => {
             eprintln!("ordo watch: not yet implemented");
         }
-        Command::Add { .. } => {
-            eprintln!("ordo add: not yet implemented");
+        Command::Add { provider, name, version } => {
+            cli::add::run(&provider, &name, version.as_deref())?;
         }
         Command::Update { .. } => {
             eprintln!("ordo update: not yet implemented");

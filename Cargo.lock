@@ -543,6 +543,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
 ]

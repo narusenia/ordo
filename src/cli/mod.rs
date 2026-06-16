@@ -1,3 +1,4 @@
+pub mod add;
 pub mod build;
 pub mod clean;
 pub mod init;
@@ -159,8 +160,15 @@ pub enum Command {
 
     /// Add a dependency
     Add {
+        /// Provider (pkg-config, system, vcpkg, conan) or source (path, git)
+        provider: String,
+
         /// Dependency name
         name: String,
+
+        /// Version constraint (e.g., "1.2", "^1.0", ">=2.0")
+        #[arg(long)]
+        version: Option<String>,
     },
 
     /// Update dependencies

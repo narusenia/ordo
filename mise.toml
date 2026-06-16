@@ -1,5 +1,5 @@
 [tools]
-rust = "stable"
+rust = "1.95"
 
 [tasks.build]
 description = "Build the project"

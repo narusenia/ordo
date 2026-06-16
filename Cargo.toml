@@ -2,6 +2,7 @@
 name = "ordo"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 description = "A modern project orchestrator for C and C++"
 license = "MIT OR Apache-2.0"
 

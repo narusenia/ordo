@@ -1,32 +1,51 @@
 use crate::cli::ProjectLang;
 use crate::util::style;
-use dialoguer::{Input, Select};
 use miette::{bail, IntoDiagnostic, Result};
+use promptuity::prompts::{Input, Select, SelectOption};
+use promptuity::themes::MinimalTheme;
+use promptuity::{Promptuity, Term};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 pub fn run_interactive(base: &Path, no_git: bool) -> Result<()> {
-    let name: String = Input::new()
-        .with_prompt("Project name")
-        .interact_text()
+    let mut term = Term::default();
+    let mut theme = MinimalTheme::default();
+    let mut p = Promptuity::new(&mut term, &mut theme);
+
+    p.with_intro("Create a new project").begin().into_diagnostic()?;
+
+    let name: String = p
+        .prompt(Input::new("Project name").with_placeholder("myapp"))
         .into_diagnostic()?;
 
-    let lang_idx = Select::new()
-        .with_prompt("Language")
-        .items(["C++", "C"])
-        .default(0)
-        .interact()
+    let lang: ProjectLang = p
+        .prompt(
+            Select::new(
+                "Language",
+                vec![
+                    SelectOption::new("C++", ProjectLang::Cpp),
+                    SelectOption::new("C", ProjectLang::C),
+                ],
+            )
+            .as_mut(),
+        )
         .into_diagnostic()?;
-    let lang = if lang_idx == 0 { ProjectLang::Cpp } else { ProjectLang::C };
 
-    let type_idx = Select::new()
-        .with_prompt("Type")
-        .items(["executable", "static-library"])
-        .default(0)
-        .interact()
+    let lib: bool = p
+        .prompt(
+            Select::new(
+                "Type",
+                vec![
+                    SelectOption::new("executable", false),
+                    SelectOption::new("static-library", true),
+                ],
+            )
+            .as_mut(),
+        )
         .into_diagnostic()?;
-    let lib = type_idx == 1;
+
+    p.finish().into_diagnostic()?;
 
     run(base, &name, lib, lang, no_git)
 }

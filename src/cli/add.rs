@@ -3,8 +3,10 @@ use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::Provider;
 use crate::util::style;
-use dialoguer::Select;
 use miette::{bail, IntoDiagnostic, Result};
+use promptuity::prompts::{Select, SelectOption};
+use promptuity::themes::MinimalTheme;
+use promptuity::{Promptuity, Term};
 use std::path::Path;
 use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
@@ -33,13 +35,28 @@ fn parse_spec(spec: &str) -> ParsedSpec {
 }
 
 fn prompt_provider() -> Result<String> {
-    let idx = Select::new()
-        .with_prompt("Provider")
-        .items(PROVIDERS)
-        .default(0)
-        .interact()
+    let mut term = Term::default();
+    let mut theme = MinimalTheme::default();
+    let mut p = Promptuity::new(&mut term, &mut theme);
+
+    p.begin().into_diagnostic()?;
+
+    let provider: String = p
+        .prompt(
+            Select::new(
+                "Provider",
+                PROVIDERS
+                    .iter()
+                    .map(|&name| SelectOption::new(name, name.to_string()))
+                    .collect(),
+            )
+            .as_mut(),
+        )
         .into_diagnostic()?;
-    Ok(PROVIDERS[idx].to_string())
+
+    p.finish().into_diagnostic()?;
+
+    Ok(provider)
 }
 
 pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {

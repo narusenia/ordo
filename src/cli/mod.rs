@@ -30,9 +30,10 @@ pub enum ColorMode {
     Never,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ProjectLang {
     C,
+    #[default]
     Cpp,
 }
 

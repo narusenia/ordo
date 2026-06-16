@@ -14,7 +14,7 @@ docs/
 ## Tech Stack
 
 - Language: Rust (edition 2021)
-- Key crates: clap (CLI), toml + serde (config), miette (errors), indicatif + console (rich CLI output — progress bars, spinners, styled status lines), notify (watch), tokio (async IO), rayon (parallel CPU), gix (git), pubgrub (dependency resolution), reqwest (HTTP), dirs (OS paths), owo-colors (color), tracing (logging)
+- Key crates: clap (CLI), toml + serde (config), miette (errors), indicatif + console (rich CLI output — progress bars, spinners, styled status lines), promptuity (interactive prompts — Select, Input, Confirm; use MinimalTheme), notify (watch), tokio (async IO), rayon (parallel CPU), gix (git), pubgrub (dependency resolution), reqwest (HTTP), dirs (OS paths), owo-colors (color), tracing (logging)
 - Build backend: Ninja (direct generation, no CMake in pipeline)
 
 ## CLI Output Style

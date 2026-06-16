@@ -77,11 +77,13 @@ fn main() -> Result<()> {
         Command::Add { spec, provider } => {
             cli::add::run(&spec, provider.as_deref())?;
         }
-        Command::Update { .. } => {
-            eprintln!("ordo update: not yet implemented");
+        Command::Update { name } => {
+            let cwd = std::env::current_dir().into_diagnostic()?;
+            cli::update::run(&cwd, name.as_deref())?;
         }
         Command::Tree => {
-            eprintln!("ordo tree: not yet implemented");
+            let cwd = std::env::current_dir().into_diagnostic()?;
+            cli::tree::run(&cwd)?;
         }
         Command::Install { .. } => {
             eprintln!("ordo install: not yet implemented");

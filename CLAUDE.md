@@ -14,8 +14,15 @@ docs/
 ## Tech Stack
 
 - Language: Rust (edition 2021)
-- Key crates: clap (CLI), toml + serde (config), miette (errors), notify (watch), tokio (async IO), rayon (parallel CPU), gix (git), pubgrub (dependency resolution), reqwest (HTTP), dirs (OS paths), owo-colors (color), tracing (logging)
+- Key crates: clap (CLI), toml + serde (config), miette (errors), indicatif + console (rich CLI output — progress bars, spinners, styled status lines), notify (watch), tokio (async IO), rayon (parallel CPU), gix (git), pubgrub (dependency resolution), reqwest (HTTP), dirs (OS paths), owo-colors (color), tracing (logging)
 - Build backend: Ninja (direct generation, no CMake in pipeline)
+
+## CLI Output Style
+
+- Use `indicatif` for progress bars and spinners (build progress, dependency fetching)
+- Use `console` for styled terminal output (bold, colored status lines)
+- Follow Cargo's output style: `Compiling myapp v0.1.0`, `Finished dev [debug] target(s) in 1.23s`
+- Status verbs are right-aligned and colored green (success) or red (error)
 
 ## Workflow
 

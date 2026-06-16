@@ -5,7 +5,7 @@ use crate::backend::provider::git::{GitDepSpec, GitProvider};
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
-use crate::backend::provider::{FetchedDep, Provider};
+use crate::backend::provider::{FetchedDep, Provider, ResolvedDep};
 use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
 use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
@@ -126,6 +126,37 @@ fn auto_detect_compiler() -> CompilerKind {
 fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
     let mut fetched = Vec::new();
 
+    // Pass 1: batch-install all vcpkg deps in one manifest
+    let vcpkg_deps: Vec<(&str, Option<&str>)> = manifest
+        .dependencies
+        .iter()
+        .filter(|(_, spec)| spec.source_kind() == DependencySource::Provider(ProviderKind::Vcpkg))
+        .map(|(name, spec)| (name.as_str(), spec.version.as_deref()))
+        .collect();
+
+    if !vcpkg_deps.is_empty() {
+        let spinner = style::create_spinner(&format!(
+            "Installing {} vcpkg package(s)…",
+            vcpkg_deps.len()
+        ));
+        let vcpkg = VcpkgProvider::new();
+        match vcpkg.install_packages(&vcpkg_deps) {
+            Ok(()) => {
+                let names: Vec<&str> = vcpkg_deps.iter().map(|(n, _)| *n).collect();
+                style::finish_spinner_success(
+                    &spinner,
+                    "Installed",
+                    &format!("{} (vcpkg)", names.join(", ")),
+                );
+            }
+            Err(e) => {
+                style::finish_spinner_error(&spinner, "Failed", "vcpkg install");
+                return Err(e);
+            }
+        }
+    }
+
+    // Pass 2: resolve + fetch each dependency
     for (name, spec) in &manifest.dependencies {
         let dep = match spec.source_kind() {
             DependencySource::Provider(ProviderKind::PkgConfig) => {
@@ -165,22 +196,17 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                 }
             }
             DependencySource::Provider(ProviderKind::Vcpkg) => {
-                let spinner = style::create_spinner(&format!("Resolving {name} (vcpkg)…"));
+                // Already installed in pass 1, just fetch
                 let provider = VcpkgProvider::new();
-                match provider.resolve(name, spec.version.as_deref()) {
-                    Ok(resolved) => {
-                        style::finish_spinner_success(
-                            &spinner,
-                            "Resolved",
-                            &format!("{name} v{} (vcpkg)", resolved.version),
-                        );
-                        provider.fetch(&resolved)?
-                    }
-                    Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (vcpkg)"));
-                        return Err(e);
-                    }
-                }
+                let root = provider.vcpkg_root()?;
+                let triplet = VcpkgProvider::host_triplet();
+                let version = provider.query_version(&root, name, triplet);
+                style::success("Resolved", &format!("{name} v{version} (vcpkg)"));
+                provider.fetch(&ResolvedDep {
+                    name: name.to_string(),
+                    version,
+                    source: "vcpkg".to_string(),
+                })?
             }
             DependencySource::Provider(ProviderKind::Conan) => {
                 let spinner = style::create_spinner(&format!("Resolving {name} (conan)…"));

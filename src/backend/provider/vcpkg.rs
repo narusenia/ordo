@@ -25,7 +25,7 @@ impl VcpkgProvider {
         }
     }
 
-    fn vcpkg_root(&self) -> Result<PathBuf> {
+    pub fn vcpkg_root(&self) -> Result<PathBuf> {
         if let Some(root) = &self.root_override {
             return Ok(root.clone());
         }
@@ -58,8 +58,6 @@ impl VcpkgProvider {
             "git",
             &[
                 "clone",
-                "--depth",
-                "1",
                 "https://github.com/microsoft/vcpkg.git",
                 &dest.display().to_string(),
             ],
@@ -84,7 +82,7 @@ impl VcpkgProvider {
         }
     }
 
-    fn host_triplet() -> &'static str {
+    pub fn host_triplet() -> &'static str {
         match (std::env::consts::OS, std::env::consts::ARCH) {
             ("linux", "x86_64") => "x64-linux",
             ("linux", "aarch64") => "arm64-linux",
@@ -96,18 +94,32 @@ impl VcpkgProvider {
         }
     }
 
-    fn install_package(
+    pub fn install_packages(
         &self,
-        root: &Path,
-        name: &str,
-        version: Option<&str>,
-        triplet: &str,
+        packages: &[(&str, Option<&str>)],
     ) -> Result<()> {
+        if packages.is_empty() {
+            return Ok(());
+        }
+
+        let root = self.vcpkg_root()?;
+        let triplet = Self::host_triplet();
+
+        let has_versioned = packages.iter().any(|(_, v)| v.is_some());
+        if has_versioned {
+            self.ensure_full_clone(&root)?;
+        }
+        let baseline = if has_versioned {
+            self.get_baseline(&root)
+        } else {
+            None
+        };
+
         let tmp_dir = tempfile::tempdir().into_diagnostic()?;
-        let manifest = build_vcpkg_manifest(name, version);
+        let manifest = build_vcpkg_manifest_multi(packages, baseline.as_deref());
         std::fs::write(tmp_dir.path().join("vcpkg.json"), &manifest).into_diagnostic()?;
 
-        let vcpkg = self.vcpkg_exe(root);
+        let vcpkg = self.vcpkg_exe(&root);
         let output = self.runner.run(
             &vcpkg.display().to_string(),
             &[
@@ -117,20 +129,19 @@ impl VcpkgProvider {
                 &format!("--triplet={triplet}"),
                 &format!("--x-install-root={}", root.join("installed").display()),
             ],
-            Some(root),
+            Some(&root),
         )?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("not found") || stderr.contains("no such package") {
-                bail!(
-                    "vcpkg: package '{name}' not found\n  \
-                     help: run `vcpkg search {name}` to check available packages"
-                );
-            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let detail = if stderr.trim().is_empty() { &stdout } else { &stderr };
+            let names: Vec<&str> = packages.iter().map(|(n, _)| *n).collect();
             bail!(
-                "vcpkg install failed for '{name}':\n{stderr}\n  \
-                 help: check vcpkg logs for details"
+                "vcpkg install failed for [{}]:\n{}\n  \
+                 help: check vcpkg logs for details",
+                names.join(", "),
+                detail.trim()
             );
         }
 
@@ -184,7 +195,28 @@ impl VcpkgProvider {
         })
     }
 
-    fn query_version(&self, root: &Path, name: &str, triplet: &str) -> String {
+    fn ensure_full_clone(&self, root: &Path) -> Result<()> {
+        if root.join(".git").join("shallow").exists() {
+            self.runner.run(
+                "git",
+                &["-C", &root.display().to_string(), "fetch", "--unshallow"],
+                None,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn get_baseline(&self, root: &Path) -> Option<String> {
+        let output = self.runner.run(
+            "git",
+            &["-C", &root.display().to_string(), "rev-parse", "HEAD"],
+            None,
+        ).ok()?;
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if hash.is_empty() { None } else { Some(hash) }
+    }
+
+    pub fn query_version(&self, root: &Path, name: &str, triplet: &str) -> String {
         let vcpkg = self.vcpkg_exe(root);
         let output = self.runner.run(
             &vcpkg.display().to_string(),
@@ -214,11 +246,10 @@ impl Provider for VcpkgProvider {
     }
 
     fn resolve(&self, name: &str, version: Option<&str>) -> Result<ResolvedDep> {
+        self.install_packages(&[(name, version)])?;
+
         let root = self.vcpkg_root()?;
         let triplet = Self::host_triplet();
-
-        self.install_package(&root, name, version, triplet)?;
-
         let resolved_version = self.query_version(&root, name, triplet);
 
         Ok(ResolvedDep {
@@ -235,21 +266,24 @@ impl Provider for VcpkgProvider {
     }
 }
 
-fn build_vcpkg_manifest(name: &str, version: Option<&str>) -> String {
-    let version_constraint = version
-        .map(|v| format!(",\n    \"version>=\": \"{v}\""))
+fn build_vcpkg_manifest_multi(packages: &[(&str, Option<&str>)], baseline: Option<&str>) -> String {
+    let deps: Vec<String> = packages
+        .iter()
+        .map(|(name, version)| {
+            let version_constraint = version
+                .map(|v| format!(",\n      \"version>=\": \"{v}\""))
+                .unwrap_or_default();
+            format!("    {{\n      \"name\": \"{name}\"{version_constraint}\n    }}")
+        })
+        .collect();
+
+    let baseline_field = baseline
+        .map(|b| format!(",\n  \"builtin-baseline\": \"{b}\""))
         .unwrap_or_default();
 
     format!(
-        r#"{{
-  "name": "ordo-deps",
-  "version": "0.0.0",
-  "dependencies": [
-    {{
-      "name": "{name}"{version_constraint}
-    }}
-  ]
-}}"#
+        "{{\n  \"name\": \"ordo-deps\",\n  \"version\": \"0.0.0\"{baseline_field},\n  \"dependencies\": [\n{}\n  ]\n}}",
+        deps.join(",\n")
     )
 }
 
@@ -415,16 +449,29 @@ mod tests {
 
     #[test]
     fn build_vcpkg_manifest_without_version() {
-        let manifest = build_vcpkg_manifest("spdlog", None);
+        let manifest = build_vcpkg_manifest_multi(&[("spdlog", None)], None);
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(!manifest.contains("version>="));
+        assert!(!manifest.contains("builtin-baseline"));
     }
 
     #[test]
     fn build_vcpkg_manifest_with_version() {
-        let manifest = build_vcpkg_manifest("spdlog", Some("1.14"));
+        let manifest = build_vcpkg_manifest_multi(&[("spdlog", Some("1.14"))], Some("abc123"));
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(manifest.contains("\"version>=\": \"1.14\""));
+        assert!(manifest.contains("\"builtin-baseline\": \"abc123\""));
+    }
+
+    #[test]
+    fn build_vcpkg_manifest_multi_packages() {
+        let manifest = build_vcpkg_manifest_multi(&[
+            ("fmt", Some("11")),
+            ("raylib", None),
+        ], Some("abc123"));
+        assert!(manifest.contains("\"name\": \"fmt\""));
+        assert!(manifest.contains("\"name\": \"raylib\""));
+        assert!(manifest.contains("\"version>=\": \"11\""));
     }
 
     #[test]

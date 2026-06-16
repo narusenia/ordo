@@ -29,13 +29,14 @@
 
 - **Priority**: Must
 - **Status**: Draft
-- **Description**: Version requirements use SemVer with `^` as the default operator. Resolution uses the PubGrub algorithm.
+- **Description**: Version requirements use SemVer with `^` as the default operator. Resolution uses the PubGrub algorithm. Only SemVer is supported as the versioning scheme. Non-SemVer versioning (CalVer, etc.) must use explicit operators (`=`, `>=`, `>`, `<`, `<=`) instead of `^` or `~`.
 - **Acceptance Criteria**:
   - [ ] `"1.2"` is equivalent to `"^1.2"` (>=1.2.0, <2.0.0)
   - [ ] Supports operators: `^`, `~`, `=`, `>=`, `>`, `<`, `<=`
   - [ ] Transitive dependencies resolved without conflicts
   - [ ] Conflicting requirements produce clear error messages listing the conflict chain
   - [ ] Resolution result is deterministic for the same input
+  - [ ] Only SemVer is supported; non-SemVer versions work with exact/range operators
 
 ## REQ-DEPS-004: Lock File
 

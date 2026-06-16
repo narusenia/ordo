@@ -170,9 +170,9 @@ fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, reso
 }
 
 fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<Option<String>> {
-    let spinner = style::create_spinner(&format!("Resolving {name} ({provider})…"));
+    let sw = style::create_spinner_with_detail(&format!("Resolving {name} ({provider})…"));
     let on_progress = |msg: &str| {
-        spinner.set_message(msg.to_string());
+        sw.set_detail(msg);
     };
 
     let result = match provider {
@@ -192,15 +192,14 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<O
         "pkg-config" => PkgConfigProvider.resolve(name, version),
         "system" => SystemProvider.resolve(name, version),
         _ => {
-            spinner.finish_and_clear();
+            sw.finish_success("", "");
             return Ok(None);
         }
     };
 
     match result {
         Ok(dep) => {
-            style::finish_spinner_success(
-                &spinner,
+            sw.finish_success(
                 "Resolved",
                 &format!("{name} v{} ({provider})", dep.version),
             );
@@ -208,7 +207,7 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<O
             Ok(if v == "system" || v == "unknown" { None } else { Some(v) })
         }
         Err(e) => {
-            style::finish_spinner_error(&spinner, "Failed", &format!("{name} ({provider})"));
+            sw.finish_error("Failed", &format!("{name} ({provider})"));
             Err(e)
         }
     }

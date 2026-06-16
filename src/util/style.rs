@@ -75,6 +75,70 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb
 }
 
+pub struct SpinnerWithDetail {
+    pub mp: MultiProgress,
+    pub spinner: ProgressBar,
+    pub detail: ProgressBar,
+}
+
+impl SpinnerWithDetail {
+    pub fn set_detail(&self, msg: &str) {
+        self.detail.set_message(format!("  {} {}", DIM.apply_to("└"), DIM.apply_to(msg)));
+    }
+
+    pub fn finish_success(&self, verb: &str, message: &str) {
+        self.detail.finish_and_clear();
+        self.spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{wide_msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        self.spinner.finish_with_message(format!(
+            "{} {} {message}",
+            GREEN_BOLD.apply_to(ICON_SUCCESS),
+            GREEN_BOLD.apply_to(verb),
+        ));
+    }
+
+    pub fn finish_error(&self, verb: &str, message: &str) {
+        self.detail.finish_and_clear();
+        self.spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{wide_msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        self.spinner.finish_with_message(format!(
+            "{} {} {message}",
+            RED_BOLD.apply_to(ICON_FAILURE),
+            RED_BOLD.apply_to(verb),
+        ));
+    }
+}
+
+pub fn create_spinner_with_detail(message: &str) -> SpinnerWithDetail {
+    let mp = MultiProgress::new();
+
+    let spinner = mp.add(ProgressBar::new_spinner());
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
+            .template("{spinner} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(80));
+    spinner.set_message(message.to_string());
+
+    let detail = mp.add(ProgressBar::new_spinner());
+    detail.set_style(
+        ProgressStyle::default_spinner()
+            .template("{msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    );
+    detail.enable_steady_tick(Duration::from_millis(80));
+
+    SpinnerWithDetail { mp, spinner, detail }
+}
+
 pub fn create_multi_progress() -> MultiProgress {
     MultiProgress::new()
 }

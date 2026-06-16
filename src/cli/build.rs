@@ -138,25 +138,21 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
         .collect();
 
     if !vcpkg_deps.is_empty() {
-        let spinner = style::create_spinner(&format!(
+        let sw = style::create_spinner_with_detail(&format!(
             "Installing {} vcpkg package(s)…",
             vcpkg_deps.len()
         ));
         let vcpkg = VcpkgProvider::new();
         let on_progress = |msg: &str| {
-            spinner.set_message(msg.to_string());
+            sw.set_detail(msg);
         };
         match vcpkg.install_packages(&vcpkg_deps, &on_progress) {
             Ok(()) => {
                 let names: Vec<&str> = vcpkg_deps.iter().map(|p| p.name).collect();
-                style::finish_spinner_success(
-                    &spinner,
-                    "Installed",
-                    &format!("{} (vcpkg)", names.join(", ")),
-                );
+                sw.finish_success("Installed", &format!("{} (vcpkg)", names.join(", ")));
             }
             Err(e) => {
-                style::finish_spinner_error(&spinner, "Failed", "vcpkg install");
+                sw.finish_error("Failed", "vcpkg install");
                 return Err(e);
             }
         }
@@ -215,22 +211,18 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                 })?
             }
             DependencySource::Provider(ProviderKind::Conan) => {
-                let spinner = style::create_spinner(&format!("Resolving {name} (conan)…"));
+                let sw = style::create_spinner_with_detail(&format!("Resolving {name} (conan)…"));
                 let provider = ConanProvider::new();
                 let on_progress = |msg: &str| {
-                    spinner.set_message(msg.to_string());
+                    sw.set_detail(msg);
                 };
                 match provider.resolve_with_progress(name, spec.version.as_deref(), &on_progress) {
                     Ok(resolved) => {
-                        style::finish_spinner_success(
-                            &spinner,
-                            "Resolved",
-                            &format!("{name} v{} (conan)", resolved.version),
-                        );
+                        sw.finish_success("Resolved", &format!("{name} v{} (conan)", resolved.version));
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (conan)"));
+                        sw.finish_error("Failed", &format!("{name} (conan)"));
                         return Err(e);
                     }
                 }
@@ -243,19 +235,18 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                     spec.branch.as_deref(),
                     spec.rev.as_deref(),
                 );
-                let spinner = style::create_spinner(&format!("Fetching {name} (git)…"));
+                let sw = style::create_spinner_with_detail(&format!("Fetching {name} (git)…"));
                 let provider = GitProvider::new();
-                match provider.resolve_git(name, &git_spec) {
+                let on_progress = |msg: &str| {
+                    sw.set_detail(msg);
+                };
+                match provider.resolve_git(name, &git_spec, &on_progress) {
                     Ok(resolved) => {
-                        style::finish_spinner_success(
-                            &spinner,
-                            "Fetched",
-                            &format!("{name} {} (git)", resolved.version),
-                        );
-                        provider.fetch_git(name, &git_spec)?
+                        sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
+                        provider.fetch_git(name, &git_spec, &on_progress)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (git)"));
+                        sw.finish_error("Failed", &format!("{name} (git)"));
                         return Err(e);
                     }
                 }

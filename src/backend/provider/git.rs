@@ -36,24 +36,28 @@ impl GitProvider {
         self.git_cache_dir().join(slug)
     }
 
-    fn clone_or_fetch(&self, url: &str) -> Result<PathBuf> {
+    fn clone_or_fetch(&self, url: &str, on_progress: &dyn Fn(&str)) -> Result<PathBuf> {
         let cache_path = self.repo_cache_path(url);
 
         if cache_path.join(".git").exists() || cache_path.join("HEAD").exists() {
-            self.runner.run(
+            on_progress("Fetching updates…");
+            self.runner.run_streaming(
                 "git",
-                &["-C", &cache_path.display().to_string(), "fetch", "--all", "--prune"],
+                &["-C", &cache_path.display().to_string(), "fetch", "--all", "--prune", "--progress"],
                 None,
+                on_progress,
             )?;
             return Ok(cache_path);
         }
 
         std::fs::create_dir_all(cache_path.parent().unwrap_or(Path::new("."))).into_diagnostic()?;
 
-        let output = self.runner.run(
+        on_progress(&format!("Cloning {url}…"));
+        let output = self.runner.run_streaming(
             "git",
-            &["clone", "--bare", url, &cache_path.display().to_string()],
+            &["clone", "--bare", "--progress", url, &cache_path.display().to_string()],
             None,
+            on_progress,
         )?;
 
         if !output.status.success() {
@@ -199,8 +203,8 @@ impl Provider for GitProvider {
 }
 
 impl GitProvider {
-    pub fn resolve_git(&self, name: &str, spec: &GitDepSpec) -> Result<ResolvedDep> {
-        let bare_path = self.clone_or_fetch(&spec.url)?;
+    pub fn resolve_git(&self, name: &str, spec: &GitDepSpec, on_progress: &dyn Fn(&str)) -> Result<ResolvedDep> {
+        let bare_path = self.clone_or_fetch(&spec.url, on_progress)?;
         let commit = self.resolve_commit_hash(&bare_path, &spec.git_ref)?;
 
         let short_hash = if commit.len() >= 7 {
@@ -216,8 +220,8 @@ impl GitProvider {
         })
     }
 
-    pub fn fetch_git(&self, name: &str, spec: &GitDepSpec) -> Result<FetchedDep> {
-        let bare_path = self.clone_or_fetch(&spec.url)?;
+    pub fn fetch_git(&self, name: &str, spec: &GitDepSpec, on_progress: &dyn Fn(&str)) -> Result<FetchedDep> {
+        let bare_path = self.clone_or_fetch(&spec.url, on_progress)?;
 
         let checkout_dir = self.git_cache_dir()
             .join("checkouts")
@@ -378,7 +382,7 @@ mod tests {
         let provider = GitProvider::with_runner_and_cache(Box::new(runner), cache_dir);
         let spec = GitDepSpec::from_dep("https://github.com/fmtlib/fmt", Some("11.1.0"), None, None);
 
-        let resolved = provider.resolve_git("fmt", &spec).unwrap();
+        let resolved = provider.resolve_git("fmt", &spec, &|_| {}).unwrap();
         assert_eq!(resolved.name, "fmt");
         assert!(resolved.version.contains("11.1.0#abc1234"));
         assert!(resolved.source.starts_with("git+"));

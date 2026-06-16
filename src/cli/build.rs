@@ -251,6 +251,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
     let spinner = style::create_spinner("");
     let mut had_progress = false;
+    let mut output_lines: Vec<String> = Vec::new();
 
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -283,6 +284,8 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
             spinner.reset();
             spinner.enable_steady_tick(std::time::Duration::from_millis(80));
             spinner.set_message(format!("{active_verb} {desc} {progress}"));
+        } else if !line.trim().is_empty() {
+            output_lines.push(line);
         }
     }
 
@@ -302,6 +305,9 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
     let stderr_lines = stderr_handle.join().unwrap_or_default();
     if !status.success() {
+        for line in &output_lines {
+            eprintln!("  {line}");
+        }
         for line in &stderr_lines {
             eprintln!("  {line}");
         }

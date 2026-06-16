@@ -8,7 +8,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 
 | Milestone | Title | Tasks | Progress | Key Deliverable |
 |-----------|-------|-------|----------|-----------------|
-| M1 | Foundation + MVP | TASK-001 ~ 007 | 1/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
+| M1 | Foundation + MVP | TASK-001 ~ 007 | 2/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 0/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 0/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
@@ -22,7 +22,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Task | Title | Status | Size |
 |------|-------|--------|------|
 | TASK-001 | Project Skeleton and CLI Framework | Done | M |
-| TASK-002 | Manifest Parser and Config System | Todo | L |
+| TASK-002 | Manifest Parser and Config System | Done | L |
 | TASK-003 | Error System | Todo | M |
 | TASK-004 | Project Scaffolding (new / init) | Todo | M |
 | TASK-005 | Compiler Abstraction and Ninja Generator | Todo | L |
@@ -110,7 +110,7 @@ M6: Packaging & Ecosystem
 | Task | Status | Requirements |
 |------|--------|-------------|
 | TASK-001 | Done | REQ-CLI-001 (partial), REQ-CLI-005 |
-| TASK-002 | Todo | REQ-PROJ-003, REQ-PROJ-004, REQ-CLI-004 |
+| TASK-002 | Done | REQ-PROJ-003, REQ-PROJ-004, REQ-CLI-004 |
 | TASK-003 | Todo | REQ-CLI-002, REQ-CLI-003 |
 | TASK-004 | Todo | REQ-PROJ-001, REQ-PROJ-002 |
 | TASK-005 | Todo | REQ-BUILD-003, REQ-BUILD-006 |

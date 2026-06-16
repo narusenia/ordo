@@ -1,10 +1,12 @@
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::core::manifest::{CompilerKind, CppStandard, Manifest, PackageType};
+use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 #[allow(dead_code)]
 pub struct BuildOptions {
@@ -66,11 +68,24 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
     fs::write("compile_commands.json", &output.compile_commands).into_diagnostic()?;
 
-    tracing::info!("generated build.ninja and compile_commands.json");
+    style::status(
+        "Compiling",
+        &format!("{} v{} ({})", manifest.package.name, manifest.package.version, profile_name),
+    );
 
+    let start = Instant::now();
     invoke_ninja(&build_dir, opts.jobs)?;
+    let elapsed = start.elapsed();
 
     let output_path = resolve_output_path(&output_dir, &manifest.package.name, manifest.package.package_type);
+
+    style::status(
+        "Finished",
+        &format!("`{profile_name}` profile [{}] target(s) in {:.2}s",
+            if profile_name == "release" { "optimized" } else { "unoptimized + debuginfo" },
+            elapsed.as_secs_f64(),
+        ),
+    );
 
     Ok(BuildResult {
         output_path,
@@ -152,11 +167,14 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>) -> Result<()> {
     tracing::info!("running: ninja -C {}", build_dir.display());
 
     let status = cmd
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .into_diagnostic()
         .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;
 
     if !status.success() {
+        style::status_error("Error", "build failed");
         bail!("build failed (ninja exit code: {})", status.code().unwrap_or(-1));
     }
 

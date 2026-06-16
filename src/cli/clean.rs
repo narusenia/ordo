@@ -1,3 +1,4 @@
+use crate::util::style;
 use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
@@ -6,9 +7,9 @@ pub fn run(cache: bool) -> Result<()> {
     let target = Path::new("target");
     if target.exists() {
         fs::remove_dir_all(target).into_diagnostic()?;
-        eprintln!("Removed target/");
+        style::status("Removed", "target/");
     } else {
-        eprintln!("Nothing to clean (target/ does not exist)");
+        style::status_warn("Skipped", "target/ does not exist");
     }
 
     if cache {

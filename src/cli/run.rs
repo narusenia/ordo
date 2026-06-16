@@ -1,5 +1,6 @@
 use crate::cli::build::{BuildOptions, BuildResult};
 use crate::core::manifest::PackageType;
+use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::process::Command;
 
@@ -25,7 +26,7 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
         bail!("built binary not found at {}", output_path.display());
     }
 
-    tracing::info!("running: {}", output_path.display());
+    style::status("Running", &format!("`{}`", output_path.display()));
 
     let status = Command::new(&output_path)
         .args(args)

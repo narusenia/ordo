@@ -1,3 +1,4 @@
+use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
@@ -24,7 +25,7 @@ pub fn run(name: &str, lib: bool, no_git: bool) -> Result<()> {
     }
 
     let kind = if lib { "library" } else { "executable" };
-    eprintln!("Created {kind} project '{name}'");
+    style::status("Created", &format!("{kind} project `{name}`"));
 
     Ok(())
 }

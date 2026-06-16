@@ -1,3 +1,4 @@
+use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
@@ -23,7 +24,7 @@ type = "{package_type}"
     )
     .into_diagnostic()?;
 
-    eprintln!("Initialized ordo project '{name}' (type: {package_type})");
+    style::status("Initialized", &format!("ordo project `{name}` ({package_type})"));
 
     Ok(())
 }

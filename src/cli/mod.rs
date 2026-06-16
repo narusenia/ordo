@@ -158,17 +158,14 @@ pub enum Command {
         notify: bool,
     },
 
-    /// Add a dependency
+    /// Add a dependency (e.g. `ordo add raylib@6 -p vcpkg`, `ordo add vcpkg:raylib@6`)
     Add {
-        /// Provider (pkg-config, system, vcpkg, conan) or source (path, git)
-        provider: String,
+        /// Package spec: name, name@version, or provider:name@version
+        spec: String,
 
-        /// Dependency name
-        name: String,
-
-        /// Version constraint (e.g., "1.2", "^1.0", ">=2.0")
-        #[arg(long)]
-        version: Option<String>,
+        /// Provider (pkg-config, system, vcpkg, conan, path, git). Interactive if omitted.
+        #[arg(short, long)]
+        provider: Option<String>,
     },
 
     /// Update dependencies

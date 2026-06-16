@@ -14,6 +14,10 @@ pub struct Manifest {
     pub language: Language,
     #[serde(default)]
     pub toolchain: Toolchain,
+    #[serde(default)]
+    pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
+    #[serde(default)]
+    pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +148,131 @@ impl fmt::Display for LinkerKind {
         }
     }
 }
+
+// --- Dependency specification ---
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DependencySpec {
+    pub version: Option<String>,
+    pub path: Option<String>,
+    pub git: Option<String>,
+    pub tag: Option<String>,
+    pub branch: Option<String>,
+    pub rev: Option<String>,
+    pub provider: Option<ProviderKind>,
+    pub optional: bool,
+    pub workspace: bool,
+    pub features: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProviderKind {
+    Vcpkg,
+    Conan,
+    PkgConfig,
+    System,
+}
+
+impl fmt::Display for ProviderKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Vcpkg => write!(f, "vcpkg"),
+            Self::Conan => write!(f, "conan"),
+            Self::PkgConfig => write!(f, "pkg-config"),
+            Self::System => write!(f, "system"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DependencySpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Version(String),
+            Table(DependencyTable),
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case")]
+        struct DependencyTable {
+            version: Option<String>,
+            path: Option<String>,
+            git: Option<String>,
+            tag: Option<String>,
+            branch: Option<String>,
+            rev: Option<String>,
+            provider: Option<ProviderKind>,
+            #[serde(default)]
+            optional: bool,
+            #[serde(default)]
+            workspace: bool,
+            #[serde(default)]
+            features: Vec<String>,
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw::Version(v) => Ok(DependencySpec {
+                version: Some(v),
+                path: None,
+                git: None,
+                tag: None,
+                branch: None,
+                rev: None,
+                provider: None,
+                optional: false,
+                workspace: false,
+                features: Vec::new(),
+            }),
+            Raw::Table(t) => Ok(DependencySpec {
+                version: t.version,
+                path: t.path,
+                git: t.git,
+                tag: t.tag,
+                branch: t.branch,
+                rev: t.rev,
+                provider: t.provider,
+                optional: t.optional,
+                workspace: t.workspace,
+                features: t.features,
+            }),
+        }
+    }
+}
+
+impl DependencySpec {
+    pub fn source_kind(&self) -> DependencySource {
+        if self.workspace {
+            DependencySource::Workspace
+        } else if self.path.is_some() {
+            DependencySource::Path
+        } else if self.git.is_some() {
+            DependencySource::Git
+        } else if let Some(provider) = self.provider {
+            DependencySource::Provider(provider)
+        } else if self.version.is_some() {
+            DependencySource::Registry
+        } else {
+            DependencySource::Unknown
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencySource {
+    Path,
+    Git,
+    Registry,
+    Provider(ProviderKind),
+    Workspace,
+    Unknown,
+}
+
+// --- Errors ---
 
 #[derive(Debug, Error, Diagnostic)]
 #[allow(clippy::enum_variant_names)]
@@ -494,5 +623,266 @@ mod tests {
         assert_eq!(CppStandard::Cpp20.as_flag(), "c++20");
         assert_eq!(CppStandard::Cpp23.as_flag(), "c++23");
         assert_eq!(CppStandard::Cpp26.as_flag(), "c++26");
+    }
+
+    // --- Dependency parsing tests ---
+
+    #[test]
+    fn dep_version_short_form() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = "11"
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["fmt"];
+        assert_eq!(dep.version.as_deref(), Some("11"));
+        assert_eq!(dep.source_kind(), DependencySource::Registry);
+    }
+
+    #[test]
+    fn dep_version_long_form() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = { version = "11.1" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["fmt"];
+        assert_eq!(dep.version.as_deref(), Some("11.1"));
+        assert_eq!(dep.source_kind(), DependencySource::Registry);
+    }
+
+    #[test]
+    fn dep_path() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            core = { path = "../core" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["core"];
+        assert_eq!(dep.path.as_deref(), Some("../core"));
+        assert_eq!(dep.source_kind(), DependencySource::Path);
+    }
+
+    #[test]
+    fn dep_git_with_tag() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = { git = "https://github.com/fmtlib/fmt", tag = "11.1.0" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["fmt"];
+        assert_eq!(dep.git.as_deref(), Some("https://github.com/fmtlib/fmt"));
+        assert_eq!(dep.tag.as_deref(), Some("11.1.0"));
+        assert_eq!(dep.source_kind(), DependencySource::Git);
+    }
+
+    #[test]
+    fn dep_provider_vcpkg() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            spdlog = { version = "1.14", provider = "vcpkg" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["spdlog"];
+        assert_eq!(dep.provider, Some(ProviderKind::Vcpkg));
+        assert_eq!(dep.version.as_deref(), Some("1.14"));
+        assert_eq!(dep.source_kind(), DependencySource::Provider(ProviderKind::Vcpkg));
+    }
+
+    #[test]
+    fn dep_provider_pkg_config() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            openssl = { provider = "pkg-config" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["openssl"];
+        assert_eq!(dep.provider, Some(ProviderKind::PkgConfig));
+    }
+
+    #[test]
+    fn dep_provider_system() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            zlib = { provider = "system" }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["zlib"];
+        assert_eq!(dep.provider, Some(ProviderKind::System));
+        assert_eq!(dep.source_kind(), DependencySource::Provider(ProviderKind::System));
+    }
+
+    #[test]
+    fn dep_optional() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            qt = { provider = "vcpkg", optional = true }
+            "#,
+        )
+        .unwrap();
+
+        assert!(m.dependencies["qt"].optional);
+    }
+
+    #[test]
+    fn dep_workspace_ref() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = { workspace = true }
+            "#,
+        )
+        .unwrap();
+
+        let dep = &m.dependencies["fmt"];
+        assert!(dep.workspace);
+        assert_eq!(dep.source_kind(), DependencySource::Workspace);
+    }
+
+    #[test]
+    fn dep_with_features() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            spdlog = { version = "1.14", provider = "vcpkg", features = ["async"] }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(m.dependencies["spdlog"].features, vec!["async"]);
+    }
+
+    #[test]
+    fn dev_dependencies() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dev-dependencies]
+            gtest = { provider = "vcpkg" }
+            "#,
+        )
+        .unwrap();
+
+        assert!(m.dev_dependencies.contains_key("gtest"));
+        assert!(m.dependencies.is_empty());
+    }
+
+    #[test]
+    fn mixed_dependency_forms() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = "11"
+            core = { path = "../core" }
+            spdlog = { version = "1.14", provider = "vcpkg" }
+            openssl = { provider = "pkg-config" }
+            zlib = { provider = "system" }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(m.dependencies.len(), 5);
+        assert_eq!(m.dependencies["fmt"].source_kind(), DependencySource::Registry);
+        assert_eq!(m.dependencies["core"].source_kind(), DependencySource::Path);
+        assert_eq!(m.dependencies["spdlog"].source_kind(), DependencySource::Provider(ProviderKind::Vcpkg));
+        assert_eq!(m.dependencies["openssl"].source_kind(), DependencySource::Provider(ProviderKind::PkgConfig));
+        assert_eq!(m.dependencies["zlib"].source_kind(), DependencySource::Provider(ProviderKind::System));
+    }
+
+    #[test]
+    fn no_dependencies_is_valid() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        assert!(m.dependencies.is_empty());
+        assert!(m.dev_dependencies.is_empty());
     }
 }

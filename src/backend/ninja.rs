@@ -118,8 +118,9 @@ impl<'a> NinjaGenerator<'a> {
             let obj = format!("{stem}.o");
             let depfile = format!("{stem}.d");
 
-            let compile_flags = self.compile_flags_str();
-            let rule = if is_cpp_source(src) { "cxx" } else { "cc" };
+            let cpp = is_cpp_source(src);
+            let compile_flags = self.compile_flags_str_for(cpp);
+            let rule = if cpp { "cxx" } else { "cc" };
 
             writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
             writeln!(out, "  depfile = {depfile}").unwrap();
@@ -152,11 +153,13 @@ impl<'a> NinjaGenerator<'a> {
         out
     }
 
-    fn compile_flags_str(&self) -> String {
+    fn compile_flags_str_for(&self, cpp: bool) -> String {
         let mut flags = vec!["-c".to_string()];
 
-        if let Some(std) = self.compile_flags.cpp_standard {
-            flags.push(format!("-std={}", std.as_flag()));
+        if cpp {
+            if let Some(std) = self.compile_flags.cpp_standard {
+                flags.push(format!("-std={}", std.as_flag()));
+            }
         } else if let Some(std) = self.compile_flags.c_standard {
             flags.push(format!("-std={}", std.as_flag()));
         }
@@ -204,6 +207,16 @@ impl<'a> NinjaGenerator<'a> {
         flags.join(" ")
     }
 
+    fn compile_flags_for(&self, cpp: bool) -> CompileFlags {
+        let mut flags = self.compile_flags.clone();
+        if cpp {
+            flags.c_standard = None;
+        } else {
+            flags.cpp_standard = None;
+        }
+        flags
+    }
+
     fn has_cpp_sources(&self) -> bool {
         self.sources.iter().any(|s| is_cpp_source(s))
     }
@@ -230,8 +243,10 @@ impl<'a> NinjaGenerator<'a> {
                     src.file_stem().unwrap_or_default().to_string_lossy()
                 ));
                 let depfile = obj.with_extension("d");
-                let args = self.compiler.compile_args(&abs_src, &obj, &depfile, &self.compile_flags);
-                let exe = if is_cpp_source(src) {
+                let cpp = is_cpp_source(src);
+                let flags = self.compile_flags_for(cpp);
+                let args = self.compiler.compile_args(&abs_src, &obj, &depfile, &flags);
+                let exe = if cpp {
                     self.compiler.cpp_executable()
                 } else {
                     self.compiler.c_executable()

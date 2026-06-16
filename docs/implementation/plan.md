@@ -9,7 +9,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Milestone | Title | Tasks | Progress | Key Deliverable |
 |-----------|-------|-------|----------|-----------------|
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
-| M2 | Dependency Management | TASK-008 ~ 014 | 1/7 | All provider backends, lock file, `ordo add/update/tree` |
+| M2 | Dependency Management | TASK-008 ~ 014 | 3/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 0/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -34,8 +34,8 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Task | Title | Status | Size |
 |------|-------|--------|------|
 | TASK-008 | Dependency Declaration and Resolver | Done | L |
-| TASK-009 | Lock File | Todo | M |
-| TASK-010 | Passive Providers (pkg-config, system) | Todo | M |
+| TASK-009 | Lock File | Done | M |
+| TASK-010 | Passive Providers (pkg-config, system) | Done | M |
 | TASK-011 | vcpkg Provider (Active) | Todo | L |
 | TASK-012 | Conan Provider (Active) | Todo | M |
 | TASK-013 | Git Provider | Todo | L |
@@ -117,8 +117,8 @@ M6: Packaging & Ecosystem
 | TASK-006 | Done | REQ-BUILD-001, REQ-BUILD-004 (partial: dev/release only) |
 | TASK-007 | Done | REQ-BUILD-002, REQ-BUILD-009 |
 | TASK-008 | Done | REQ-DEPS-001, REQ-DEPS-003 |
-| TASK-009 | Todo | REQ-DEPS-004 |
-| TASK-010 | Todo | REQ-DEPS-007, REQ-DEPS-008 |
+| TASK-009 | Done | REQ-DEPS-004 |
+| TASK-010 | Done | REQ-DEPS-007, REQ-DEPS-008 |
 | TASK-011 | Todo | REQ-DEPS-005 |
 | TASK-012 | Todo | REQ-DEPS-006 |
 | TASK-013 | Todo | REQ-DEPS-001 (git) |

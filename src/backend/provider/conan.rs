@@ -25,7 +25,13 @@ impl ConanProvider {
     }
 
     fn detect_conan(&self) -> Result<()> {
-        let output = self.runner.run("conan", &["--version"], None)?;
+        let output = match self.runner.run("conan", &["--version"], None) {
+            Ok(o) => o,
+            Err(_) => bail!(
+                "conan: command not found\n  \
+                 help: install Conan 2.x — https://conan.io/downloads"
+            ),
+        };
         if !output.status.success() {
             bail!(
                 "conan not found or not working\n  \

@@ -1,9 +1,35 @@
 use crate::cli::ProjectLang;
 use crate::util::style;
+use dialoguer::{Input, Select};
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+pub fn run_interactive(base: &Path, no_git: bool) -> Result<()> {
+    let name: String = Input::new()
+        .with_prompt("Project name")
+        .interact_text()
+        .into_diagnostic()?;
+
+    let lang_idx = Select::new()
+        .with_prompt("Language")
+        .items(["C++", "C"])
+        .default(0)
+        .interact()
+        .into_diagnostic()?;
+    let lang = if lang_idx == 0 { ProjectLang::Cpp } else { ProjectLang::C };
+
+    let type_idx = Select::new()
+        .with_prompt("Type")
+        .items(["executable", "static-library"])
+        .default(0)
+        .interact()
+        .into_diagnostic()?;
+    let lib = type_idx == 1;
+
+    run(base, &name, lib, lang, no_git)
+}
 
 pub fn run(base: &Path, name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()> {
     let project_dir = base.join(name);

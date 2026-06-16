@@ -40,16 +40,16 @@ pub enum ProjectLang {
 pub enum Command {
     /// Create a new project
     New {
-        /// Project name
-        name: String,
+        /// Project name (interactive if omitted)
+        name: Option<String>,
 
         /// Create a library project
         #[arg(long)]
         lib: bool,
 
         /// Project language
-        #[arg(long, default_value = "cpp")]
-        lang: ProjectLang,
+        #[arg(long)]
+        lang: Option<ProjectLang>,
 
         /// Skip git initialization
         #[arg(long)]

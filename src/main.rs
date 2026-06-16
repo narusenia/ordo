@@ -6,7 +6,7 @@ mod util;
 
 use clap::Parser;
 use cli::{Cli, ColorMode, Command};
-use miette::Result;
+use miette::{IntoDiagnostic, Result};
 use tracing_subscriber::EnvFilter;
 use util::paths::OrdoPaths;
 
@@ -20,10 +20,12 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::New { name, lib, lang, no_git } => {
-            cli::new::run(&name, lib, lang, no_git)?;
+            let cwd = std::env::current_dir().into_diagnostic()?;
+            cli::new::run(&cwd, &name, lib, lang, no_git)?;
         }
         Command::Init => {
-            cli::init::run()?;
+            let cwd = std::env::current_dir().into_diagnostic()?;
+            cli::init::run(&cwd)?;
         }
         Command::Build {
             release,

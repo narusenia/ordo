@@ -127,22 +127,58 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
     for (name, spec) in &manifest.dependencies {
         let dep = match spec.source_kind() {
             DependencySource::Provider(ProviderKind::PkgConfig) => {
+                let spinner = style::create_spinner(&format!("Resolving {name} (pkg-config)…"));
                 let provider = PkgConfigProvider;
-                let resolved = provider.resolve(name, spec.version.as_deref())?;
-                style::success("Resolved", &format!("{name} v{} (pkg-config)", resolved.version));
-                provider.fetch(&resolved)?
+                match provider.resolve(name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (pkg-config)", resolved.version),
+                        );
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (pkg-config)"));
+                        return Err(e);
+                    }
+                }
             }
             DependencySource::Provider(ProviderKind::System) => {
+                let spinner = style::create_spinner(&format!("Resolving {name} (system)…"));
                 let provider = SystemProvider;
-                let resolved = provider.resolve(name, spec.version.as_deref())?;
-                style::success("Resolved", &format!("{name} (system)"));
-                provider.fetch(&resolved)?
+                match provider.resolve(name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} (system)"),
+                        );
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (system)"));
+                        return Err(e);
+                    }
+                }
             }
             DependencySource::Provider(ProviderKind::Vcpkg) => {
+                let spinner = style::create_spinner(&format!("Resolving {name} (vcpkg)…"));
                 let provider = VcpkgProvider::new();
-                let resolved = provider.resolve(name, spec.version.as_deref())?;
-                style::success("Resolved", &format!("{name} v{} (vcpkg)", resolved.version));
-                provider.fetch(&resolved)?
+                match provider.resolve(name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (vcpkg)", resolved.version),
+                        );
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (vcpkg)"));
+                        return Err(e);
+                    }
+                }
             }
             _ => continue,
         };

@@ -5,24 +5,24 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub fn run(name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()> {
-    let project_dir = Path::new(name);
+pub fn run(base: &Path, name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()> {
+    let project_dir = base.join(name);
     if project_dir.exists() {
         bail!("directory '{}' already exists", name);
     }
 
-    fs::create_dir_all(project_dir).into_diagnostic()?;
+    fs::create_dir_all(&project_dir).into_diagnostic()?;
 
     if lib {
-        create_library(project_dir, name, lang)?;
+        create_library(&project_dir, name, lang)?;
     } else {
-        create_executable(project_dir, name, lang)?;
+        create_executable(&project_dir, name, lang)?;
     }
 
-    write_gitignore(project_dir)?;
+    write_gitignore(&project_dir)?;
 
     if !no_git {
-        git_init(project_dir)?;
+        git_init(&project_dir)?;
     }
 
     let kind = if lib { "library" } else { "executable" };
@@ -32,7 +32,7 @@ pub fn run(name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()>
     };
     style::success("Created", &format!("{lang_label} {kind} project `{name}`"));
 
-    let tree = build_tree(project_dir, lib, lang);
+    let tree = build_tree(&project_dir, lib, lang);
     for line in &tree {
         style::tree_line(line);
     }
@@ -287,87 +287,72 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn in_temp<F: FnOnce(&Path)>(f: F) {
-        let tmp = TempDir::new().unwrap();
-        f(tmp.path());
-    }
-
     #[test]
     fn new_cpp_executable() {
-        in_temp(|tmp| {
-            std::env::set_current_dir(tmp).unwrap();
-            run("myapp", false, ProjectLang::Cpp, true).unwrap();
+        let tmp = TempDir::new().unwrap();
+        run(tmp.path(), "myapp", false, ProjectLang::Cpp, true).unwrap();
 
-            let dir = tmp.join("myapp");
-            assert!(dir.join("Ordo.toml").exists());
-            assert!(dir.join("src/main.cpp").exists());
-            assert!(dir.join("tests/main_test.cpp").exists());
+        let dir = tmp.path().join("myapp");
+        assert!(dir.join("Ordo.toml").exists());
+        assert!(dir.join("src/main.cpp").exists());
+        assert!(dir.join("tests/main_test.cpp").exists());
 
-            let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
-            assert!(manifest.contains("type = \"executable\""));
-            assert!(manifest.contains("cpp = \"c++20\""));
-        });
+        let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
+        assert!(manifest.contains("type = \"executable\""));
+        assert!(manifest.contains("cpp = \"c++20\""));
     }
 
     #[test]
     fn new_c_executable() {
-        in_temp(|tmp| {
-            std::env::set_current_dir(tmp).unwrap();
-            run("myapp", false, ProjectLang::C, true).unwrap();
+        let tmp = TempDir::new().unwrap();
+        run(tmp.path(), "myapp", false, ProjectLang::C, true).unwrap();
 
-            let dir = tmp.join("myapp");
-            assert!(dir.join("src/main.c").exists());
-            assert!(dir.join("tests/main_test.c").exists());
-            assert!(!dir.join("src/main.cpp").exists());
+        let dir = tmp.path().join("myapp");
+        assert!(dir.join("src/main.c").exists());
+        assert!(dir.join("tests/main_test.c").exists());
+        assert!(!dir.join("src/main.cpp").exists());
 
-            let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
-            assert!(manifest.contains("c = \"c23\""));
-        });
+        let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
+        assert!(manifest.contains("c = \"c23\""));
     }
 
     #[test]
     fn new_cpp_library() {
-        in_temp(|tmp| {
-            std::env::set_current_dir(tmp).unwrap();
-            run("mylib", true, ProjectLang::Cpp, true).unwrap();
+        let tmp = TempDir::new().unwrap();
+        run(tmp.path(), "mylib", true, ProjectLang::Cpp, true).unwrap();
 
-            let dir = tmp.join("mylib");
-            assert!(dir.join("include/mylib/mylib.hpp").exists());
-            assert!(dir.join("src/mylib.cpp").exists());
-            assert!(dir.join("tests/mylib_test.cpp").exists());
+        let dir = tmp.path().join("mylib");
+        assert!(dir.join("include/mylib/mylib.hpp").exists());
+        assert!(dir.join("src/mylib.cpp").exists());
+        assert!(dir.join("tests/mylib_test.cpp").exists());
 
-            let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
-            assert!(manifest.contains("type = \"static-library\""));
-            assert!(manifest.contains("cpp = \"c++20\""));
-        });
+        let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
+        assert!(manifest.contains("type = \"static-library\""));
+        assert!(manifest.contains("cpp = \"c++20\""));
     }
 
     #[test]
     fn new_c_library() {
-        in_temp(|tmp| {
-            std::env::set_current_dir(tmp).unwrap();
-            run("mylib", true, ProjectLang::C, true).unwrap();
+        let tmp = TempDir::new().unwrap();
+        run(tmp.path(), "mylib", true, ProjectLang::C, true).unwrap();
 
-            let dir = tmp.join("mylib");
-            assert!(dir.join("include/mylib/mylib.h").exists());
-            assert!(dir.join("src/mylib.c").exists());
-            assert!(dir.join("tests/mylib_test.c").exists());
+        let dir = tmp.path().join("mylib");
+        assert!(dir.join("include/mylib/mylib.h").exists());
+        assert!(dir.join("src/mylib.c").exists());
+        assert!(dir.join("tests/mylib_test.c").exists());
 
-            let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
-            assert!(manifest.contains("c = \"c23\""));
+        let manifest = fs::read_to_string(dir.join("Ordo.toml")).unwrap();
+        assert!(manifest.contains("c = \"c23\""));
 
-            let header = fs::read_to_string(dir.join("include/mylib/mylib.h")).unwrap();
-            assert!(header.contains("MYLIB_H"));
-        });
+        let header = fs::read_to_string(dir.join("include/mylib/mylib.h")).unwrap();
+        assert!(header.contains("MYLIB_H"));
     }
 
     #[test]
     fn new_fails_if_directory_exists() {
-        in_temp(|tmp| {
-            fs::create_dir(tmp.join("existing")).unwrap();
-            std::env::set_current_dir(tmp).unwrap();
-            let result = run("existing", false, ProjectLang::Cpp, true);
-            assert!(result.is_err());
-        });
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("existing")).unwrap();
+        let result = run(tmp.path(), "existing", false, ProjectLang::Cpp, true);
+        assert!(result.is_err());
     }
 }

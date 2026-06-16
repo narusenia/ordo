@@ -8,16 +8,17 @@ use std::path::Path;
 use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
 pub fn run(provider: &str, name: &str, version: Option<&str>) -> Result<()> {
-    run_inner(provider, name, version, true)
+    let dir = std::env::current_dir().into_diagnostic()?;
+    run_inner(&dir, provider, name, version, true)
 }
 
-fn run_inner(provider: &str, name: &str, version: Option<&str>, resolve: bool) -> Result<()> {
-    let manifest_path = Path::new("Ordo.toml");
+fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, resolve: bool) -> Result<()> {
+    let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
     }
 
-    let content = std::fs::read_to_string(manifest_path).into_diagnostic()?;
+    let content = std::fs::read_to_string(&manifest_path).into_diagnostic()?;
     let mut doc: DocumentMut = content.parse().into_diagnostic()?;
 
     if !doc.contains_table("dependencies") {
@@ -37,7 +38,7 @@ fn run_inner(provider: &str, name: &str, version: Option<&str>, resolve: bool) -
     let value = build_dep_value(provider, version)?;
     deps.insert(name, Item::Value(value));
 
-    std::fs::write(manifest_path, doc.to_string()).into_diagnostic()?;
+    std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
 
     let version_str = version.map(|v| format!(" v{v}")).unwrap_or_default();
     style::success("Added", &format!("{name}{version_str} ({provider})"));
@@ -116,16 +117,15 @@ type = "executable"
 "#,
         )
         .unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
         tmp
     }
 
     #[test]
     fn add_pkg_config_dep() {
-        let _tmp = setup_project();
-        run_inner("pkg-config", "zlib", None, false).unwrap();
+        let tmp = setup_project();
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false).unwrap();
 
-        let content = std::fs::read_to_string("Ordo.toml").unwrap();
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
         assert!(content.contains("zlib"));
         assert!(content.contains("pkg-config"));
@@ -133,35 +133,35 @@ type = "executable"
 
     #[test]
     fn add_system_dep_with_version() {
-        let _tmp = setup_project();
-        run_inner("system", "m", None, false).unwrap();
+        let tmp = setup_project();
+        run_inner(tmp.path(), "system", "m", None, false).unwrap();
 
-        let content = std::fs::read_to_string("Ordo.toml").unwrap();
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("provider = \"system\""));
     }
 
     #[test]
     fn add_vcpkg_dep_with_version() {
-        let _tmp = setup_project();
-        run_inner("vcpkg", "fmt", Some("11"), false).unwrap();
+        let tmp = setup_project();
+        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false).unwrap();
 
-        let content = std::fs::read_to_string("Ordo.toml").unwrap();
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("version = \"11\""));
         assert!(content.contains("provider = \"vcpkg\""));
     }
 
     #[test]
     fn add_duplicate_fails() {
-        let _tmp = setup_project();
-        run_inner("pkg-config", "zlib", None, false).unwrap();
-        let result = run_inner("pkg-config", "zlib", None, false);
+        let tmp = setup_project();
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false).unwrap();
+        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false);
         assert!(result.is_err());
     }
 
     #[test]
     fn add_unknown_provider_fails() {
-        let _tmp = setup_project();
-        let result = run_inner("npm", "lodash", None, false);
+        let tmp = setup_project();
+        let result = run_inner(tmp.path(), "npm", "lodash", None, false);
         assert!(result.is_err());
     }
 
@@ -177,11 +177,10 @@ type = "executable"
 "#,
         )
         .unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
 
-        run_inner("system", "pthread", None, false).unwrap();
+        run_inner(tmp.path(), "system", "pthread", None, false).unwrap();
 
-        let content = std::fs::read_to_string("Ordo.toml").unwrap();
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
         assert!(content.contains("pthread"));
     }

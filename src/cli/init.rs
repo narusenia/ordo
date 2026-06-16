@@ -3,17 +3,17 @@ use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 
-pub fn run() -> Result<()> {
-    let manifest_path = Path::new("Ordo.toml");
+pub fn run(dir: &Path) -> Result<()> {
+    let manifest_path = dir.join("Ordo.toml");
     if manifest_path.exists() {
         bail!("Ordo.toml already exists in this directory");
     }
 
-    let package_type = detect_project_type();
-    let name = detect_project_name();
+    let package_type = detect_project_type(dir);
+    let name = detect_project_name(dir);
 
     fs::write(
-        manifest_path,
+        &manifest_path,
         format!(
             r#"[package]
 name = "{name}"
@@ -29,20 +29,19 @@ type = "{package_type}"
     Ok(())
 }
 
-fn detect_project_type() -> &'static str {
+fn detect_project_type(dir: &Path) -> &'static str {
     let candidates = ["src/main.cpp", "src/main.c", "main.cpp", "main.c"];
     for c in &candidates {
-        if Path::new(c).exists() {
+        if dir.join(c).exists() {
             return "executable";
         }
     }
     "static-library"
 }
 
-fn detect_project_name() -> String {
-    std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+fn detect_project_name(dir: &Path) -> String {
+    dir.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "unnamed".to_string())
 }
 
@@ -54,11 +53,10 @@ mod tests {
     #[test]
     fn init_creates_manifest() {
         let tmp = TempDir::new().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
 
-        run().unwrap();
+        run(tmp.path()).unwrap();
 
-        let manifest = fs::read_to_string("Ordo.toml").unwrap();
+        let manifest = fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(manifest.contains("version = \"0.1.0\""));
     }
 
@@ -67,11 +65,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::create_dir_all(tmp.path().join("src")).unwrap();
         fs::write(tmp.path().join("src/main.cpp"), "int main() {}").unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
 
-        run().unwrap();
+        run(tmp.path()).unwrap();
 
-        let manifest = fs::read_to_string("Ordo.toml").unwrap();
+        let manifest = fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(manifest.contains("type = \"executable\""));
     }
 
@@ -80,11 +77,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::create_dir_all(tmp.path().join("src")).unwrap();
         fs::write(tmp.path().join("src/lib.cpp"), "void foo() {}").unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
 
-        run().unwrap();
+        run(tmp.path()).unwrap();
 
-        let manifest = fs::read_to_string("Ordo.toml").unwrap();
+        let manifest = fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(manifest.contains("type = \"static-library\""));
     }
 
@@ -92,9 +88,8 @@ mod tests {
     fn init_fails_if_manifest_exists() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("Ordo.toml"), "").unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
 
-        let result = run();
+        let result = run(tmp.path());
         assert!(result.is_err());
     }
 }

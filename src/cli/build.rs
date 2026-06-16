@@ -279,8 +279,9 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions, deps: &[Fetched
         include_dirs.extend(dep.include_dirs.iter().cloned());
     }
 
+    let has_cpp = manifest.language.cpp.is_some() || manifest.language.c.is_none();
     CompileFlags {
-        cpp_standard: manifest.language.cpp.or(Some(CppStandard::Cpp20)),
+        cpp_standard: if has_cpp { manifest.language.cpp.or(Some(CppStandard::Cpp20)) } else { None },
         c_standard: manifest.language.c,
         opt_level,
         debug,

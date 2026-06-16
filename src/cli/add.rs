@@ -1,4 +1,5 @@
 use crate::backend::provider::conan::ConanProvider;
+use crate::backend::provider::git::expand_git_shorthand;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
@@ -69,6 +70,17 @@ pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
         .or(parsed.provider)
         .map_or_else(prompt_provider, Ok)?;
 
+    if provider == "git" {
+        let url = expand_git_shorthand(&parsed.name);
+        let dep_name = git_repo_name(&parsed.name);
+        return run_inner_git(
+            &dir,
+            &dep_name,
+            &url,
+            parsed.version.as_deref(),
+        );
+    }
+
     run_inner(
         &dir,
         &provider,
@@ -76,6 +88,48 @@ pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
         parsed.version.as_deref(),
         true,
     )
+}
+
+fn git_repo_name(spec: &str) -> String {
+    spec.rsplit('/')
+        .next()
+        .unwrap_or(spec)
+        .trim_end_matches(".git")
+        .to_string()
+}
+
+fn run_inner_git(dir: &Path, name: &str, url: &str, tag: Option<&str>) -> Result<()> {
+    let manifest_path = dir.join("Ordo.toml");
+    if !manifest_path.exists() {
+        bail!("Ordo.toml not found in current directory");
+    }
+
+    let content = std::fs::read_to_string(&manifest_path).into_diagnostic()?;
+    let mut doc: DocumentMut = content.parse().into_diagnostic()?;
+
+    if !doc.contains_table("dependencies") {
+        doc["dependencies"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+
+    let deps = doc["dependencies"].as_table_mut().unwrap();
+
+    if deps.contains_key(name) {
+        bail!("dependency '{name}' already exists in [dependencies]");
+    }
+
+    let mut table = InlineTable::new();
+    table.insert("git", url.into());
+    if let Some(t) = tag {
+        table.insert("tag", t.into());
+    }
+    deps.insert(name, Item::Value(Value::InlineTable(table)));
+
+    std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
+
+    let tag_str = tag.map(|t| format!(" @{t}")).unwrap_or_default();
+    style::success("Added", &format!("{name}{tag_str} (git)"));
+
+    Ok(())
 }
 
 fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, resolve: bool) -> Result<()> {
@@ -282,5 +336,48 @@ type = "executable"
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
         assert!(content.contains("pthread"));
+    }
+
+    #[test]
+    fn parse_spec_git_shorthand() {
+        let s = parse_spec("git:fmtlib/fmt@11.1.0");
+        assert_eq!(s.provider.as_deref(), Some("git"));
+        assert_eq!(s.name, "fmtlib/fmt");
+        assert_eq!(s.version.as_deref(), Some("11.1.0"));
+    }
+
+    #[test]
+    fn parse_spec_git_codeberg() {
+        let s = parse_spec("git:codeberg.org/nxeu/ordo");
+        assert_eq!(s.provider.as_deref(), Some("git"));
+        assert_eq!(s.name, "codeberg.org/nxeu/ordo");
+        assert!(s.version.is_none());
+    }
+
+    #[test]
+    fn git_repo_name_from_path() {
+        assert_eq!(git_repo_name("fmtlib/fmt"), "fmt");
+        assert_eq!(git_repo_name("codeberg.org/nxeu/ordo"), "ordo");
+        assert_eq!(git_repo_name("simple"), "simple");
+    }
+
+    #[test]
+    fn add_git_dep_with_tag() {
+        let tmp = setup_project();
+        run_inner_git(tmp.path(), "fmt", "https://github.com/fmtlib/fmt", Some("11.1.0")).unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("git = \"https://github.com/fmtlib/fmt\""));
+        assert!(content.contains("tag = \"11.1.0\""));
+    }
+
+    #[test]
+    fn add_git_dep_without_tag() {
+        let tmp = setup_project();
+        run_inner_git(tmp.path(), "fmt", "https://github.com/fmtlib/fmt", None).unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("git = \"https://github.com/fmtlib/fmt\""));
+        assert!(!content.contains("tag"));
     }
 }

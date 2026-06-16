@@ -3,7 +3,7 @@ use crate::backend::provider::git::expand_git_shorthand;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
-use crate::backend::provider::Provider;
+use crate::backend::provider::{Provider, ResolvedDep};
 use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use promptuity::prompts::{Select, SelectOption};
@@ -170,17 +170,34 @@ fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, reso
 }
 
 fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<Option<String>> {
-    let p: Box<dyn Provider> = match provider {
-        "pkg-config" => Box::new(PkgConfigProvider),
-        "system" => Box::new(SystemProvider),
-        "vcpkg" => Box::new(VcpkgProvider::new()),
-        "conan" => Box::new(ConanProvider::new()),
-        _ => return Ok(None),
+    let spinner = style::create_spinner(&format!("Resolving {name} ({provider})…"));
+    let on_progress = |msg: &str| {
+        spinner.set_message(msg.to_string());
     };
 
-    let spinner = style::create_spinner(&format!("Resolving {name} ({provider})…"));
+    let result = match provider {
+        "vcpkg" => {
+            let p = VcpkgProvider::new();
+            use crate::backend::provider::vcpkg::VcpkgPackageSpec;
+            p.install_packages(&[VcpkgPackageSpec { name, version }], &on_progress)?;
+            let root = p.vcpkg_root()?;
+            let triplet = VcpkgProvider::host_triplet();
+            let ver = p.query_version(&root, name, triplet);
+            Ok(ResolvedDep { name: name.to_string(), version: ver, source: "vcpkg".to_string() })
+        }
+        "conan" => {
+            let p = ConanProvider::new();
+            p.resolve_with_progress(name, version, &on_progress)
+        }
+        "pkg-config" => PkgConfigProvider.resolve(name, version),
+        "system" => SystemProvider.resolve(name, version),
+        _ => {
+            spinner.finish_and_clear();
+            return Ok(None);
+        }
+    };
 
-    match p.resolve(name, version) {
+    match result {
         Ok(dep) => {
             style::finish_spinner_success(
                 &spinner,

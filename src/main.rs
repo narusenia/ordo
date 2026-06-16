@@ -19,11 +19,10 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::New { name, lib, no_git } => {
-            tracing::debug!(?name, lib, no_git, "new project");
-            eprintln!("ordo new: not yet implemented");
+            cli::new::run(&name, lib, no_git)?;
         }
         Command::Init => {
-            eprintln!("ordo init: not yet implemented");
+            cli::init::run()?;
         }
         Command::Build { .. } => {
             eprintln!("ordo build: not yet implemented");

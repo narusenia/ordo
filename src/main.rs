@@ -1,3 +1,115 @@
-fn main() {
-    println!("Hello, world!");
+mod cli;
+mod util;
+
+use clap::Parser;
+use cli::{Cli, Command};
+use miette::Result;
+use tracing_subscriber::EnvFilter;
+use util::paths::OrdoPaths;
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    init_tracing(cli.verbose);
+
+    if cli.no_color {
+        owo_colors::set_override(false);
+    }
+
+    let _paths = OrdoPaths::resolve();
+
+    match cli.command {
+        Command::New { name, lib, no_git } => {
+            tracing::debug!(?name, lib, no_git, "new project");
+            eprintln!("ordo new: not yet implemented");
+        }
+        Command::Init => {
+            eprintln!("ordo init: not yet implemented");
+        }
+        Command::Build { .. } => {
+            eprintln!("ordo build: not yet implemented");
+        }
+        Command::Run { .. } => {
+            eprintln!("ordo run: not yet implemented");
+        }
+        Command::Test { .. } => {
+            eprintln!("ordo test: not yet implemented");
+        }
+        Command::Check => {
+            eprintln!("ordo check: not yet implemented");
+        }
+        Command::Clean { .. } => {
+            eprintln!("ordo clean: not yet implemented");
+        }
+        Command::Fmt { .. } => {
+            eprintln!("ordo fmt: not yet implemented");
+        }
+        Command::Lint { .. } => {
+            eprintln!("ordo lint: not yet implemented");
+        }
+        Command::Watch { .. } => {
+            eprintln!("ordo watch: not yet implemented");
+        }
+        Command::Add { .. } => {
+            eprintln!("ordo add: not yet implemented");
+        }
+        Command::Update { .. } => {
+            eprintln!("ordo update: not yet implemented");
+        }
+        Command::Tree => {
+            eprintln!("ordo tree: not yet implemented");
+        }
+        Command::Install { .. } => {
+            eprintln!("ordo install: not yet implemented");
+        }
+        Command::Package => {
+            eprintln!("ordo package: not yet implemented");
+        }
+        Command::Publish => {
+            eprintln!("ordo publish: not yet implemented");
+        }
+        Command::Import { .. } => {
+            eprintln!("ordo import: not yet implemented");
+        }
+        Command::Generate { .. } => {
+            eprintln!("ordo generate: not yet implemented");
+        }
+        Command::Toolchain { .. } => {
+            eprintln!("ordo toolchain: not yet implemented");
+        }
+        Command::Ci { .. } => {
+            eprintln!("ordo ci: not yet implemented");
+        }
+        Command::Doctor => {
+            eprintln!("ordo doctor: not yet implemented");
+        }
+        Command::Config { .. } => {
+            eprintln!("ordo config: not yet implemented");
+        }
+        Command::RunScript { .. } => {
+            eprintln!("ordo run-script: not yet implemented");
+        }
+        Command::SelfCmd { .. } => {
+            eprintln!("ordo self: not yet implemented");
+        }
+    }
+
+    Ok(())
+}
+
+fn init_tracing(verbosity: u8) {
+    let filter = match verbosity {
+        0 => "ordo=warn",
+        1 => "ordo=info",
+        2 => "ordo=debug",
+        _ => "ordo=trace",
+    };
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter)),
+        )
+        .with_target(false)
+        .without_time()
+        .init();
 }

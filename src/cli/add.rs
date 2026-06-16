@@ -151,28 +151,31 @@ fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, reso
         bail!("dependency '{name}' already exists in [dependencies]");
     }
 
-    if resolve {
-        verify_resolve(provider, name, version)?;
-    }
+    let resolved_version = if resolve {
+        verify_resolve(provider, name, version)?
+    } else {
+        version.map(|v| v.to_string())
+    };
 
-    let value = build_dep_value(provider, version)?;
+    let effective_version = resolved_version.as_deref().or(version);
+    let value = build_dep_value(provider, effective_version)?;
     deps.insert(name, Item::Value(value));
 
     std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
 
-    let version_str = version.map(|v| format!(" v{v}")).unwrap_or_default();
+    let version_str = effective_version.map(|v| format!(" v{v}")).unwrap_or_default();
     style::success("Added", &format!("{name}{version_str} ({provider})"));
 
     Ok(())
 }
 
-fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<()> {
+fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<Option<String>> {
     let p: Box<dyn Provider> = match provider {
         "pkg-config" => Box::new(PkgConfigProvider),
         "system" => Box::new(SystemProvider),
         "vcpkg" => Box::new(VcpkgProvider::new()),
         "conan" => Box::new(ConanProvider::new()),
-        _ => return Ok(()),
+        _ => return Ok(None),
     };
 
     let spinner = style::create_spinner(&format!("Resolving {name} ({provider})…"));
@@ -184,7 +187,8 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<(
                 "Resolved",
                 &format!("{name} v{} ({provider})", dep.version),
             );
-            Ok(())
+            let v = dep.version.clone();
+            Ok(if v == "system" || v == "unknown" { None } else { Some(v) })
         }
         Err(e) => {
             style::finish_spinner_error(&spinner, "Failed", &format!("{name} ({provider})"));

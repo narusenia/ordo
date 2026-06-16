@@ -6,10 +6,12 @@ use std::path::Path;
 pub fn run(cache: bool) -> Result<()> {
     let target = Path::new("target");
     if target.exists() {
+        let size = dir_size(target);
         fs::remove_dir_all(target).into_diagnostic()?;
-        style::status("Removed", "target/");
+        let size_str = format_size(size);
+        style::success("Removed", &format!("target/ ({size_str} freed)"));
     } else {
-        style::status_warn("Skipped", "target/ does not exist");
+        style::skip("Nothing to clean", "");
     }
 
     if cache {
@@ -17,6 +19,37 @@ pub fn run(cache: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn dir_size(path: &Path) -> u64 {
+    let mut total = 0;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                total += dir_size(&p);
+            } else if let Ok(meta) = p.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 fn clear_external_cache() {
@@ -27,7 +60,7 @@ fn clear_external_cache() {
         .status()
         && status.success()
     {
-        eprintln!("Stopped sccache server");
+        style::success("Stopped", "sccache server");
         return;
     }
 
@@ -38,6 +71,6 @@ fn clear_external_cache() {
         .status()
         && status.success()
     {
-        eprintln!("Cleared ccache");
+        style::success("Cleared", "ccache");
     }
 }

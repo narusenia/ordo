@@ -30,9 +30,45 @@ pub fn run(name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()>
         ProjectLang::C => "C",
         ProjectLang::Cpp => "C++",
     };
-    style::status("Created", &format!("{lang_label} {kind} project `{name}`"));
+    style::success("Created", &format!("{lang_label} {kind} project `{name}`"));
+
+    let tree = build_tree(project_dir, lib, lang);
+    for line in &tree {
+        style::tree_line(line);
+    }
 
     Ok(())
+}
+
+fn build_tree(dir: &Path, lib: bool, lang: ProjectLang) -> Vec<String> {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let (src_ext, hdr_ext) = match lang {
+        ProjectLang::C => ("c", "h"),
+        ProjectLang::Cpp => ("cpp", "hpp"),
+    };
+
+    let mut lines = vec![format!("{name}/")];
+
+    if lib {
+        lines.push("├── Ordo.toml".to_string());
+        lines.push("├── include/".to_string());
+        lines.push(format!("│   └── {name}/"));
+        lines.push(format!("│       └── {name}.{hdr_ext}"));
+        lines.push("├── src/".to_string());
+        lines.push(format!("│   └── {name}.{src_ext}"));
+        lines.push("├── tests/".to_string());
+        lines.push(format!("│   └── {name}_test.{src_ext}"));
+        lines.push("└── .gitignore".to_string());
+    } else {
+        lines.push("├── Ordo.toml".to_string());
+        lines.push("├── src/".to_string());
+        lines.push(format!("│   └── main.{src_ext}"));
+        lines.push("├── tests/".to_string());
+        lines.push(format!("│   └── main_test.{src_ext}"));
+        lines.push("└── .gitignore".to_string());
+    }
+
+    lines
 }
 
 fn create_executable(dir: &Path, name: &str, lang: ProjectLang) -> Result<()> {

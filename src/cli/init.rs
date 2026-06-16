@@ -24,7 +24,7 @@ type = "{package_type}"
     )
     .into_diagnostic()?;
 
-    style::status("Initialized", &format!("ordo project `{name}` ({package_type})"));
+    style::success("Initialized", &format!("ordo project `{name}` ({package_type})"));
 
     Ok(())
 }

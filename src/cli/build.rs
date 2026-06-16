@@ -4,8 +4,9 @@ use crate::core::manifest::{CompilerKind, CppStandard, Manifest, PackageType};
 use crate::util::style;
 use miette::{bail, IntoDiagnostic, Result};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Instant;
 
 #[allow(dead_code)]
@@ -15,6 +16,7 @@ pub struct BuildOptions {
     pub jobs: Option<u32>,
     pub target: Option<String>,
     pub no_cache: bool,
+    pub verbose: u8,
 }
 
 pub struct BuildResult {
@@ -68,24 +70,29 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
     fs::write("compile_commands.json", &output.compile_commands).into_diagnostic()?;
 
-    style::status(
-        "Compiling",
-        &format!("{} v{} ({})", manifest.package.name, manifest.package.version, profile_name),
-    );
-
     let start = Instant::now();
-    invoke_ninja(&build_dir, opts.jobs)?;
+    invoke_ninja(&build_dir, opts.jobs, opts.verbose)?;
     let elapsed = start.elapsed();
 
-    let output_path = resolve_output_path(&output_dir, &manifest.package.name, manifest.package.package_type);
+    let output_path = resolve_output_path(
+        &output_dir,
+        &manifest.package.name,
+        manifest.package.package_type,
+    );
 
-    style::status(
+    let profile_desc = if profile_name == "release" {
+        "optimized"
+    } else {
+        "unoptimized + debuginfo"
+    };
+    style::success(
         "Finished",
-        &format!("`{profile_name}` profile [{}] target(s) in {:.2}s",
-            if profile_name == "release" { "optimized" } else { "unoptimized + debuginfo" },
-            elapsed.as_secs_f64(),
+        &format!(
+            "`{profile_name}` profile [{profile_desc}] in {:.2}s",
+            elapsed.as_secs_f64()
         ),
     );
+    style::meta(&format!("→ {}", output_path.display()));
 
     Ok(BuildResult {
         output_path,
@@ -162,7 +169,7 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
-fn invoke_ninja(build_dir: &Path, jobs: Option<u32>) -> Result<()> {
+fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()> {
     let mut cmd = Command::new("ninja");
     cmd.arg("-C").arg(build_dir);
 
@@ -170,19 +177,140 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>) -> Result<()> {
         cmd.arg(format!("-j{j}"));
     }
 
-    tracing::info!("running: ninja -C {}", build_dir.display());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
 
-    let status = cmd
-        .status()
+    let mut child = cmd
+        .spawn()
         .into_diagnostic()
         .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;
 
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let stderr_handle = std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        reader.lines().map_while(Result::ok).collect::<Vec<_>>()
+    });
+
+    let spinner = style::create_spinner("");
+    let mut had_progress = false;
+
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let line = line.into_diagnostic()?;
+
+        if let Some(parsed) = parse_ninja_progress(&line) {
+            had_progress = true;
+
+            let desc = clean_path(parsed.description.as_deref().unwrap_or(""));
+            let progress = format!("[{}/{}]", parsed.current, parsed.total);
+
+            let (active_verb, _done_verb) = if parsed.action.contains("Linking") {
+                ("Linking", "Linked")
+            } else if parsed.action.contains("Archiving") {
+                ("Archiving", "Archived")
+            } else {
+                ("Compiling", "Compiled")
+            };
+
+            if parsed.current > 1 {
+                let prev_msg = spinner.message();
+                spinner.finish_and_clear();
+                let prev_display = prev_msg
+                    .replace("Compiling", "Compiled")
+                    .replace("Linking", "Linked")
+                    .replace("Archiving", "Archived");
+                style::success("", &prev_display);
+            }
+
+            spinner.reset();
+            spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+            spinner.set_message(format!("{active_verb} {desc} {progress}"));
+        }
+    }
+
+    if had_progress {
+        let final_msg = spinner.message();
+        spinner.finish_and_clear();
+        let done_msg = final_msg
+            .replace("Compiling", "Compiled")
+            .replace("Linking", "Linked")
+            .replace("Archiving", "Archived");
+        style::success("", &done_msg);
+    } else {
+        spinner.finish_and_clear();
+    }
+
+    let status = child.wait().into_diagnostic()?;
+
+    let stderr_lines = stderr_handle.join().unwrap_or_default();
     if !status.success() {
-        style::status_error("Error", "build failed");
-        bail!("build failed (ninja exit code: {})", status.code().unwrap_or(-1));
+        for line in &stderr_lines {
+            eprintln!("  {line}");
+        }
+        style::error("Build failed", "");
+        bail!(
+            "build failed (ninja exit code: {})",
+            status.code().unwrap_or(-1)
+        );
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+struct NinjaProgress {
+    current: u32,
+    total: u32,
+    action: String,
+    description: Option<String>,
+    command: Option<String>,
+}
+
+fn parse_ninja_progress(line: &str) -> Option<NinjaProgress> {
+    // Parse "[N/M] Action description" format
+    let line = line.trim();
+    if !line.starts_with('[') {
+        return None;
+    }
+
+    let bracket_end = line.find(']')?;
+    let counts = &line[1..bracket_end];
+    let (current, total) = counts.split_once('/')?;
+    let current: u32 = current.trim().parse().ok()?;
+    let total: u32 = total.trim().parse().ok()?;
+
+    let rest = line[bracket_end + 1..].trim().to_string();
+
+    let (action, description) = if let Some(idx) = rest.find(' ') {
+        let (a, d) = rest.split_at(idx);
+        (a.to_string(), Some(d.trim().to_string()))
+    } else {
+        (rest, None)
+    };
+
+    Some(NinjaProgress {
+        current,
+        total,
+        action,
+        description,
+        command: None,
+    })
+}
+
+fn clean_path(path: &str) -> String {
+    let path = path.trim();
+    // Strip leading ../ sequences to show project-relative path
+    let mut result = path;
+    while let Some(rest) = result.strip_prefix("../") {
+        result = rest;
+    }
+    // Also strip leading ./
+    if let Some(rest) = result.strip_prefix("./") {
+        result = rest;
+    }
+    result.to_string()
 }
 
 fn resolve_output_path(output_dir: &Path, name: &str, package_type: PackageType) -> PathBuf {

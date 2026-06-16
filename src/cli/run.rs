@@ -11,6 +11,7 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
         jobs: None,
         target: None,
         no_cache: false,
+        verbose: 0,
     };
 
     let BuildResult {
@@ -26,7 +27,7 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
         bail!("built binary not found at {}", output_path.display());
     }
 
-    style::status("Running", &format!("`{}`", output_path.display()));
+    style::run_icon("Running", &format!("{}", output_path.display()));
 
     let status = Command::new(&output_path)
         .args(args)

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod conan;
 pub mod pkgconfig;
 pub mod system;
 pub mod vcpkg;

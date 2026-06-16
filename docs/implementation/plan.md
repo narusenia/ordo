@@ -9,7 +9,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Milestone | Title | Tasks | Progress | Key Deliverable |
 |-----------|-------|-------|----------|-----------------|
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
-| M2 | Dependency Management | TASK-008 ~ 014 | 3/7 | All provider backends, lock file, `ordo add/update/tree` |
+| M2 | Dependency Management | TASK-008 ~ 014 | 4/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 0/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -37,7 +37,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | TASK-009 | Lock File | Done | M |
 | TASK-010 | Passive Providers (pkg-config, system) | Done | M |
 | TASK-011 | vcpkg Provider (Active) | Done | L |
-| TASK-012 | Conan Provider (Active) | Todo | M |
+| TASK-012 | Conan Provider (Active) | Done | M |
 | TASK-013 | Git Provider | Todo | L |
 | TASK-014 | Dependency CLI Commands (add, update, tree) | Todo | M |
 

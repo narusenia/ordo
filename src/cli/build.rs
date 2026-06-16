@@ -1,5 +1,6 @@
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
+use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
@@ -176,6 +177,24 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                     }
                     Err(e) => {
                         style::finish_spinner_error(&spinner, "Failed", &format!("{name} (vcpkg)"));
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Conan) => {
+                let spinner = style::create_spinner(&format!("Resolving {name} (conan)…"));
+                let provider = ConanProvider::new();
+                match provider.resolve(name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (conan)", resolved.version),
+                        );
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (conan)"));
                         return Err(e);
                     }
                 }

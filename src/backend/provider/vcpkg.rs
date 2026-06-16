@@ -107,8 +107,15 @@ impl VcpkgProvider {
         let root = self.vcpkg_root()?;
         let triplet = Self::host_triplet();
 
+        let has_versioned = packages.iter().any(|(_, v)| v.is_some());
+        let baseline = if has_versioned {
+            self.get_baseline(&root)
+        } else {
+            None
+        };
+
         let tmp_dir = tempfile::tempdir().into_diagnostic()?;
-        let manifest = build_vcpkg_manifest_multi(packages);
+        let manifest = build_vcpkg_manifest_multi(packages, baseline.as_deref());
         std::fs::write(tmp_dir.path().join("vcpkg.json"), &manifest).into_diagnostic()?;
 
         let vcpkg = self.vcpkg_exe(&root);
@@ -187,6 +194,16 @@ impl VcpkgProvider {
         })
     }
 
+    fn get_baseline(&self, root: &Path) -> Option<String> {
+        let output = self.runner.run(
+            "git",
+            &["-C", &root.display().to_string(), "rev-parse", "HEAD"],
+            None,
+        ).ok()?;
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if hash.is_empty() { None } else { Some(hash) }
+    }
+
     pub fn query_version(&self, root: &Path, name: &str, triplet: &str) -> String {
         let vcpkg = self.vcpkg_exe(root);
         let output = self.runner.run(
@@ -237,7 +254,7 @@ impl Provider for VcpkgProvider {
     }
 }
 
-fn build_vcpkg_manifest_multi(packages: &[(&str, Option<&str>)]) -> String {
+fn build_vcpkg_manifest_multi(packages: &[(&str, Option<&str>)], baseline: Option<&str>) -> String {
     let deps: Vec<String> = packages
         .iter()
         .map(|(name, version)| {
@@ -248,8 +265,12 @@ fn build_vcpkg_manifest_multi(packages: &[(&str, Option<&str>)]) -> String {
         })
         .collect();
 
+    let baseline_field = baseline
+        .map(|b| format!(",\n  \"builtin-baseline\": \"{b}\""))
+        .unwrap_or_default();
+
     format!(
-        "{{\n  \"name\": \"ordo-deps\",\n  \"version\": \"0.0.0\",\n  \"dependencies\": [\n{}\n  ]\n}}",
+        "{{\n  \"name\": \"ordo-deps\",\n  \"version\": \"0.0.0\"{baseline_field},\n  \"dependencies\": [\n{}\n  ]\n}}",
         deps.join(",\n")
     )
 }
@@ -416,16 +437,18 @@ mod tests {
 
     #[test]
     fn build_vcpkg_manifest_without_version() {
-        let manifest = build_vcpkg_manifest_multi(&[("spdlog", None)]);
+        let manifest = build_vcpkg_manifest_multi(&[("spdlog", None)], None);
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(!manifest.contains("version>="));
+        assert!(!manifest.contains("builtin-baseline"));
     }
 
     #[test]
     fn build_vcpkg_manifest_with_version() {
-        let manifest = build_vcpkg_manifest_multi(&[("spdlog", Some("1.14"))]);
+        let manifest = build_vcpkg_manifest_multi(&[("spdlog", Some("1.14"))], Some("abc123"));
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(manifest.contains("\"version>=\": \"1.14\""));
+        assert!(manifest.contains("\"builtin-baseline\": \"abc123\""));
     }
 
     #[test]
@@ -433,7 +456,7 @@ mod tests {
         let manifest = build_vcpkg_manifest_multi(&[
             ("fmt", Some("11")),
             ("raylib", None),
-        ]);
+        ], Some("abc123"));
         assert!(manifest.contains("\"name\": \"fmt\""));
         assert!(manifest.contains("\"name\": \"raylib\""));
         assert!(manifest.contains("\"version>=\": \"11\""));

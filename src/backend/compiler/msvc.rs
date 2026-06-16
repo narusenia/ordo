@@ -9,7 +9,11 @@ impl Compiler for MsvcCompiler {
         "msvc"
     }
 
-    fn executable(&self) -> &str {
+    fn c_executable(&self) -> &str {
+        "cl"
+    }
+
+    fn cpp_executable(&self) -> &str {
         "cl"
     }
 

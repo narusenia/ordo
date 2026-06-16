@@ -40,7 +40,8 @@ pub struct LinkFlags {
 
 pub trait Compiler {
     fn name(&self) -> &str;
-    fn executable(&self) -> &str;
+    fn c_executable(&self) -> &str;
+    fn cpp_executable(&self) -> &str;
     fn compile_args(&self, src: &Path, obj: &Path, depfile: &Path, flags: &CompileFlags) -> Vec<String>;
     fn link_args(&self, objects: &[PathBuf], output: &Path, flags: &LinkFlags) -> Vec<String>;
     fn syntax_only_flag(&self) -> &str;

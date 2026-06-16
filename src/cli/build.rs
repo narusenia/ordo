@@ -378,14 +378,17 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
         }
     }
 
-    if had_progress {
-        spinner.finish_and_clear();
-        style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
-    } else {
-        spinner.finish_and_clear();
-    }
+    spinner.finish_and_clear();
 
     let status = child.wait().into_diagnostic()?;
+
+    if had_progress {
+        if status.success() {
+            style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
+        } else {
+            style::error("Failed", &format!("{prev_desc} {prev_progress}"));
+        }
+    }
 
     let stderr_lines = stderr_handle.join().unwrap_or_default();
     if !status.success() {

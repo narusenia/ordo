@@ -8,7 +8,11 @@ impl Compiler for GccCompiler {
         "gcc"
     }
 
-    fn executable(&self) -> &str {
+    fn c_executable(&self) -> &str {
+        "gcc"
+    }
+
+    fn cpp_executable(&self) -> &str {
         "g++"
     }
 

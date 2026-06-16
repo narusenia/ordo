@@ -8,7 +8,11 @@ impl Compiler for ClangCompiler {
         "clang"
     }
 
-    fn executable(&self) -> &str {
+    fn c_executable(&self) -> &str {
+        "clang"
+    }
+
+    fn cpp_executable(&self) -> &str {
         "clang++"
     }
 

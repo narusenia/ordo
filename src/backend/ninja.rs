@@ -73,18 +73,28 @@ impl<'a> NinjaGenerator<'a> {
         writeln!(out, "ninja_required_version = 1.3").unwrap();
         writeln!(out).unwrap();
 
-        let exe = self.compiler.executable();
+        let c_exe = self.compiler.c_executable();
+        let cpp_exe = self.compiler.cpp_executable();
+
         writeln!(out, "rule cc").unwrap();
-        writeln!(out, "  command = {exe} $flags $in").unwrap();
+        writeln!(out, "  command = {c_exe} $flags $in").unwrap();
         writeln!(out, "  depfile = $depfile").unwrap();
         writeln!(out, "  deps = gcc").unwrap();
         writeln!(out, "  description = Compiling $in").unwrap();
         writeln!(out).unwrap();
 
+        writeln!(out, "rule cxx").unwrap();
+        writeln!(out, "  command = {cpp_exe} $flags $in").unwrap();
+        writeln!(out, "  depfile = $depfile").unwrap();
+        writeln!(out, "  deps = gcc").unwrap();
+        writeln!(out, "  description = Compiling $in").unwrap();
+        writeln!(out).unwrap();
+
+        let link_exe = if self.has_cpp_sources() { cpp_exe } else { c_exe };
         match self.package_type {
             PackageType::Executable => {
                 writeln!(out, "rule link").unwrap();
-                writeln!(out, "  command = {exe} $flags $in -o $out").unwrap();
+                writeln!(out, "  command = {link_exe} $flags $in -o $out").unwrap();
                 writeln!(out, "  description = Linking $out").unwrap();
             }
             PackageType::StaticLibrary => {
@@ -94,7 +104,7 @@ impl<'a> NinjaGenerator<'a> {
             }
             PackageType::SharedLibrary => {
                 writeln!(out, "rule link").unwrap();
-                writeln!(out, "  command = {exe} -shared $flags $in -o $out").unwrap();
+                writeln!(out, "  command = {link_exe} -shared $flags $in -o $out").unwrap();
                 writeln!(out, "  description = Linking $out").unwrap();
             }
         }
@@ -109,8 +119,9 @@ impl<'a> NinjaGenerator<'a> {
             let depfile = format!("{stem}.d");
 
             let compile_flags = self.compile_flags_str();
+            let rule = if is_cpp_source(src) { "cxx" } else { "cc" };
 
-            writeln!(out, "build {obj}: cc {}", rel_src.display()).unwrap();
+            writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
             writeln!(out, "  depfile = {depfile}").unwrap();
             writeln!(out, "  flags = {compile_flags}").unwrap();
             writeln!(out).unwrap();
@@ -193,6 +204,10 @@ impl<'a> NinjaGenerator<'a> {
         flags.join(" ")
     }
 
+    fn has_cpp_sources(&self) -> bool {
+        self.sources.iter().any(|s| is_cpp_source(s))
+    }
+
     fn rel_output(&self) -> PathBuf {
         let output_dir = self.build_dir.parent().unwrap_or(Path::new("."));
         let output = match self.package_type {
@@ -216,7 +231,12 @@ impl<'a> NinjaGenerator<'a> {
                 ));
                 let depfile = obj.with_extension("d");
                 let args = self.compiler.compile_args(&abs_src, &obj, &depfile, &self.compile_flags);
-                let mut command = vec![self.compiler.executable().to_string()];
+                let exe = if is_cpp_source(src) {
+                    self.compiler.cpp_executable()
+                } else {
+                    self.compiler.c_executable()
+                };
+                let mut command = vec![exe.to_string()];
                 command.extend(args);
 
                 CompileCommandEntry {
@@ -229,6 +249,13 @@ impl<'a> NinjaGenerator<'a> {
 
         serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string())
     }
+}
+
+fn is_cpp_source(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("cpp" | "cc" | "cxx" | "C")
+    )
 }
 
 #[derive(Serialize)]
@@ -319,8 +346,8 @@ mod tests {
         );
         let output = generator.generate();
 
-        assert!(output.build_ninja.contains("build main.o: cc"));
-        assert!(output.build_ninja.contains("build util.o: cc"));
+        assert!(output.build_ninja.contains("build main.o: cxx"));
+        assert!(output.build_ninja.contains("build util.o: cxx"));
     }
 
     #[test]

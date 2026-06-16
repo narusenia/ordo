@@ -2,6 +2,7 @@ use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
+use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::{FetchedDep, Provider};
 use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
 use crate::util::style;
@@ -137,7 +138,12 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                 style::success("Resolved", &format!("{name} (system)"));
                 provider.fetch(&resolved)?
             }
-            // Other providers (vcpkg, conan, git, registry) not yet implemented
+            DependencySource::Provider(ProviderKind::Vcpkg) => {
+                let provider = VcpkgProvider::new();
+                let resolved = provider.resolve(name, spec.version.as_deref())?;
+                style::success("Resolved", &format!("{name} v{} (vcpkg)", resolved.version));
+                provider.fetch(&resolved)?
+            }
             _ => continue,
         };
         fetched.push(dep);

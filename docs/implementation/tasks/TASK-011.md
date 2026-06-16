@@ -1,4 +1,4 @@
-# TASK-011: vcpkg Provider (Active)
+# TASK-011: vcpkg Provider (Active) ✅
 
 - **Related Requirements**: REQ-DEPS-005
 - **Milestone**: M2 — Dependency Management

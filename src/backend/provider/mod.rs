@@ -2,6 +2,7 @@
 
 pub mod pkgconfig;
 pub mod system;
+pub mod vcpkg;
 
 use miette::Result;
 use std::path::PathBuf;

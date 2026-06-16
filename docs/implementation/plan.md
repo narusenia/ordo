@@ -36,7 +36,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | TASK-008 | Dependency Declaration and Resolver | Done | L |
 | TASK-009 | Lock File | Done | M |
 | TASK-010 | Passive Providers (pkg-config, system) | Done | M |
-| TASK-011 | vcpkg Provider (Active) | Todo | L |
+| TASK-011 | vcpkg Provider (Active) | Done | L |
 | TASK-012 | Conan Provider (Active) | Todo | M |
 | TASK-013 | Git Provider | Todo | L |
 | TASK-014 | Dependency CLI Commands (add, update, tree) | Todo | M |
@@ -119,7 +119,7 @@ M6: Packaging & Ecosystem
 | TASK-008 | Done | REQ-DEPS-001, REQ-DEPS-003 |
 | TASK-009 | Done | REQ-DEPS-004 |
 | TASK-010 | Done | REQ-DEPS-007, REQ-DEPS-008 |
-| TASK-011 | Todo | REQ-DEPS-005 |
+| TASK-011 | Done | REQ-DEPS-005 |
 | TASK-012 | Todo | REQ-DEPS-006 |
 | TASK-013 | Todo | REQ-DEPS-001 (git) |
 | TASK-014 | Todo | REQ-DEPS-009 |

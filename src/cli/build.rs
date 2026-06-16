@@ -2,6 +2,7 @@ use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
+use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::{FetchedDep, Provider};
 use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
 use crate::util::style;
@@ -137,7 +138,12 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                 style::success("Resolved", &format!("{name} (system)"));
                 provider.fetch(&resolved)?
             }
-            // Other providers (vcpkg, conan, git, registry) not yet implemented
+            DependencySource::Provider(ProviderKind::Vcpkg) => {
+                let provider = VcpkgProvider::new();
+                let resolved = provider.resolve(name, spec.version.as_deref())?;
+                style::success("Resolved", &format!("{name} v{} (vcpkg)", resolved.version));
+                provider.fetch(&resolved)?
+            }
             _ => continue,
         };
         fetched.push(dep);
@@ -245,6 +251,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
     let spinner = style::create_spinner("");
     let mut had_progress = false;
+    let mut output_lines: Vec<String> = Vec::new();
 
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -277,6 +284,8 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
             spinner.reset();
             spinner.enable_steady_tick(std::time::Duration::from_millis(80));
             spinner.set_message(format!("{active_verb} {desc} {progress}"));
+        } else if !line.trim().is_empty() {
+            output_lines.push(line);
         }
     }
 
@@ -296,6 +305,9 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
     let stderr_lines = stderr_handle.join().unwrap_or_default();
     if !status.success() {
+        for line in &output_lines {
+            eprintln!("  {line}");
+        }
         for line in &stderr_lines {
             eprintln!("  {line}");
         }

@@ -294,6 +294,9 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
     let spinner = style::create_spinner("");
     let mut had_progress = false;
     let mut output_lines: Vec<String> = Vec::new();
+    let mut prev_desc = String::new();
+    let mut prev_progress = String::new();
+    let mut prev_done_verb = "";
 
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -305,7 +308,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
             let desc = clean_path(parsed.description.as_deref().unwrap_or(""));
             let progress = format!("[{}/{}]", parsed.current, parsed.total);
 
-            let (active_verb, _done_verb) = if parsed.action.contains("Linking") {
+            let (active_verb, done_verb) = if parsed.action.contains("Linking") {
                 ("Linking", "Linked")
             } else if parsed.action.contains("Archiving") {
                 ("Archiving", "Archived")
@@ -314,14 +317,13 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
             };
 
             if parsed.current > 1 {
-                let prev_msg = spinner.message();
                 spinner.finish_and_clear();
-                let prev_display = prev_msg
-                    .replace("Compiling", "Compiled")
-                    .replace("Linking", "Linked")
-                    .replace("Archiving", "Archived");
-                style::success("", &prev_display);
+                style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
             }
+
+            prev_desc = desc.clone();
+            prev_progress = progress.clone();
+            prev_done_verb = done_verb;
 
             spinner.reset();
             spinner.enable_steady_tick(std::time::Duration::from_millis(80));
@@ -332,13 +334,8 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
     }
 
     if had_progress {
-        let final_msg = spinner.message();
         spinner.finish_and_clear();
-        let done_msg = final_msg
-            .replace("Compiling", "Compiled")
-            .replace("Linking", "Linked")
-            .replace("Archiving", "Archived");
-        style::success("", &done_msg);
+        style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
     } else {
         spinner.finish_and_clear();
     }

@@ -37,7 +37,10 @@ Follow these steps for every implementation task:
 - Before coding, ask the user about all unknowns — leave zero ambiguity.
 - Write an implementation plan, then execute it.
 - Commit in logical units. Each commit should be a self-contained, coherent change.
-- Commit messages must describe **what was concretely done** (e.g., "add Ninja rule generation for Clang compile commands"). Avoid vague labels like "refactor", "cleanup", "update", "review feedback", or AI tool names.
+- Commit messages: **one line, concise, with Conventional Commits prefix**. Format: `<type>: <short description>`
+  - Prefixes: `feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `perf:`
+  - Example: `feat: add Ninja rule generation for Clang compile commands`
+  - Avoid vague descriptions ("update", "cleanup", "review feedback") or AI tool names.
 
 ### 3. Self-Review
 

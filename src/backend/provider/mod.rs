@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub mod pkgconfig;
+pub mod system;
+
 use miette::Result;
 use std::path::PathBuf;
 

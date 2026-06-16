@@ -186,6 +186,10 @@ impl<'a> NinjaGenerator<'a> {
         for lib in &self.link_flags.libs {
             flags.push(format!("-l{lib}"));
         }
+        for fw in &self.link_flags.frameworks {
+            flags.push("-framework".to_string());
+            flags.push(fw.clone());
+        }
         flags.join(" ")
     }
 

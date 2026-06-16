@@ -182,15 +182,21 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions, deps: &[Fetched
 fn build_link_flags(deps: &[FetchedDep]) -> LinkFlags {
     let mut lib_dirs = Vec::new();
     let mut libs = Vec::new();
+    let mut frameworks = Vec::new();
 
     for dep in deps {
         lib_dirs.extend(dep.lib_dirs.iter().cloned());
         libs.extend(dep.libs.iter().cloned());
+        frameworks.extend(dep.frameworks.iter().cloned());
     }
+
+    frameworks.sort();
+    frameworks.dedup();
 
     LinkFlags {
         lib_dirs,
         libs,
+        frameworks,
         linker: None,
     }
 }

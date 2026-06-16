@@ -69,6 +69,11 @@ impl Compiler for ClangCompiler {
             args.push(format!("-l{lib}"));
         }
 
+        for fw in &flags.frameworks {
+            args.push("-framework".to_string());
+            args.push(fw.clone());
+        }
+
         args
     }
 
@@ -152,6 +157,7 @@ mod tests {
             linker: Some(crate::core::manifest::LinkerKind::Lld),
             libs: vec!["fmt".to_string()],
             lib_dirs: vec![PathBuf::from("/usr/local/lib")],
+            frameworks: Vec::new(),
         };
 
         let args = c.link_args(&[PathBuf::from("build/main.o")], Path::new("myapp"), &flags);

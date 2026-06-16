@@ -223,6 +223,35 @@ fn find_pc_files(dir: &Path, name: &str) -> Vec<PathBuf> {
     files
 }
 
+fn expand_pc_variables(content: &str) -> String {
+    use std::collections::HashMap;
+    let mut vars: HashMap<String, String> = HashMap::new();
+    let mut expanded_lines = Vec::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some((key, val)) = line.split_once('=')
+            && !key.contains(':') && !key.contains(' ')
+        {
+            let expanded_val = substitute(&vars, val);
+            vars.insert(key.to_string(), expanded_val.clone());
+            expanded_lines.push(format!("{key}={expanded_val}"));
+            continue;
+        }
+        expanded_lines.push(substitute(&vars, line));
+    }
+
+    expanded_lines.join("\n")
+}
+
+fn substitute(vars: &std::collections::HashMap<String, String>, input: &str) -> String {
+    let mut result = input.to_string();
+    for (key, val) in vars {
+        result = result.replace(&format!("${{{key}}}"), val);
+    }
+    result
+}
+
 fn parse_pc_content(
     content: &str,
     include_dirs: &mut Vec<PathBuf>,
@@ -230,15 +259,14 @@ fn parse_pc_content(
     libs: &mut Vec<String>,
     frameworks: &mut Vec<String>,
 ) {
+    let content = expand_pc_variables(content);
     for line in content.lines() {
         let line = line.trim();
         if let Some(cflags) = line.strip_prefix("Cflags:") {
             for token in cflags.split_whitespace() {
                 if let Some(dir) = token.strip_prefix("-I") {
                     let dir = dir.trim_matches('"');
-                    if !dir.contains("${") {
-                        include_dirs.push(PathBuf::from(dir));
-                    }
+                    include_dirs.push(PathBuf::from(dir));
                 }
             }
         } else if let Some(libs_line) = line.strip_prefix("Libs:") {
@@ -248,9 +276,7 @@ fn parse_pc_content(
                 let token = tokens[i];
                 if let Some(dir) = token.strip_prefix("-L") {
                     let dir = dir.trim_matches('"');
-                    if !dir.contains("${") {
-                        lib_dirs.push(PathBuf::from(dir));
-                    }
+                    lib_dirs.push(PathBuf::from(dir));
                 } else if let Some(name) = token.strip_prefix("-l") {
                     libs.push(name.to_string());
                 } else if token == "-framework"
@@ -408,16 +434,25 @@ Libs: -L/opt/conan/lib -lspdlog
     }
 
     #[test]
-    fn parse_pc_content_skips_variable_refs() {
-        let content = "Cflags: -I${prefix}/include -I/real/path\nLibs: -L${libdir} -L/real/lib\n";
+    fn parse_pc_content_expands_variables() {
+        let content = "prefix=/opt/conan\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\nCflags: -I\"${includedir}\"\nLibs: -L\"${libdir}\" -lspdlog\n";
         let mut inc = Vec::new();
         let mut lib_dirs = Vec::new();
         let mut libs = Vec::new();
         let mut fws = Vec::new();
         parse_pc_content(content, &mut inc, &mut lib_dirs, &mut libs, &mut fws);
 
-        assert_eq!(inc, vec![PathBuf::from("/real/path")]);
-        assert_eq!(lib_dirs, vec![PathBuf::from("/real/lib")]);
+        assert_eq!(inc, vec![PathBuf::from("/opt/conan/include")]);
+        assert_eq!(lib_dirs, vec![PathBuf::from("/opt/conan/lib")]);
+        assert_eq!(libs, vec!["spdlog"]);
+    }
+
+    #[test]
+    fn expand_pc_variables_basic() {
+        let content = "prefix=/usr/local\nlibdir=${prefix}/lib\nLibs: -L${libdir}";
+        let expanded = expand_pc_variables(content);
+        assert!(expanded.contains("libdir=/usr/local/lib"));
+        assert!(expanded.contains("Libs: -L/usr/local/lib"));
     }
 
     #[test]

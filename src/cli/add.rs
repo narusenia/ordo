@@ -1,3 +1,4 @@
+use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
@@ -116,6 +117,7 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<(
         "pkg-config" => Box::new(PkgConfigProvider),
         "system" => Box::new(SystemProvider),
         "vcpkg" => Box::new(VcpkgProvider::new()),
+        "conan" => Box::new(ConanProvider::new()),
         _ => return Ok(()),
     };
 

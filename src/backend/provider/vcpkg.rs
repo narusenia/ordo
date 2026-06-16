@@ -1,8 +1,7 @@
-use super::{FetchedDep, Provider, ResolvedDep};
+use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
 use crate::util::paths::OrdoPaths;
 use miette::{bail, IntoDiagnostic, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 
 pub struct VcpkgProvider {
     runner: Box<dyn CommandRunner>,
@@ -97,6 +96,7 @@ impl VcpkgProvider {
     pub fn install_packages(
         &self,
         packages: &[VcpkgPackageSpec<'_>],
+        on_progress: &dyn Fn(&str),
     ) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
@@ -107,7 +107,8 @@ impl VcpkgProvider {
 
         let has_versioned = packages.iter().any(|p| p.version.is_some());
         if has_versioned {
-            self.ensure_full_clone(&root)?;
+            on_progress("Fetching vcpkg version history…");
+            self.ensure_full_clone(&root, on_progress)?;
         }
         let baseline = if has_versioned {
             self.get_baseline(&root)
@@ -120,7 +121,7 @@ impl VcpkgProvider {
         std::fs::write(tmp_dir.path().join("vcpkg.json"), &manifest).into_diagnostic()?;
 
         let vcpkg = self.vcpkg_exe(&root);
-        let output = self.runner.run(
+        let output = self.runner.run_streaming(
             &vcpkg.display().to_string(),
             &[
                 "install",
@@ -130,6 +131,7 @@ impl VcpkgProvider {
                 &format!("--x-install-root={}", root.join("installed").display()),
             ],
             Some(&root),
+            on_progress,
         )?;
 
         if !output.status.success() {
@@ -195,12 +197,14 @@ impl VcpkgProvider {
         })
     }
 
-    fn ensure_full_clone(&self, root: &Path) -> Result<()> {
+    fn ensure_full_clone(&self, root: &Path, on_progress: &dyn Fn(&str)) -> Result<()> {
         if root.join(".git").join("shallow").exists() {
-            self.runner.run(
+            on_progress("Unshallowing vcpkg repository…");
+            self.runner.run_streaming(
                 "git",
-                &["-C", &root.display().to_string(), "fetch", "--unshallow"],
+                &["-C", &root.display().to_string(), "fetch", "--unshallow", "--progress"],
                 None,
+                on_progress,
             )?;
         }
         Ok(())
@@ -246,7 +250,7 @@ impl Provider for VcpkgProvider {
     }
 
     fn resolve(&self, name: &str, version: Option<&str>) -> Result<ResolvedDep> {
-        self.install_packages(&[VcpkgPackageSpec { name, version }])?;
+        self.install_packages(&[VcpkgPackageSpec { name, version }], &|_| {})?;
 
         let root = self.vcpkg_root()?;
         let triplet = Self::host_triplet();
@@ -406,29 +410,11 @@ fn scan_pc_frameworks(installed_dir: &Path) -> Vec<String> {
     frameworks
 }
 
-// --- Command runner abstraction for testing ---
-
-pub trait CommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output>;
-}
-
-struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output> {
-        let mut cmd = Command::new(program);
-        cmd.args(args);
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
-        cmd.output().into_diagnostic()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::process::Output;
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone)]

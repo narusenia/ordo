@@ -1,7 +1,6 @@
-use super::{FetchedDep, Provider, ResolvedDep};
+use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
 use miette::{bail, IntoDiagnostic, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 
 pub struct ConanProvider {
     runner: Box<dyn CommandRunner>,
@@ -76,6 +75,7 @@ impl ConanProvider {
         name: &str,
         version: Option<&str>,
         output_dir: &Path,
+        on_progress: &dyn Fn(&str),
     ) -> Result<()> {
         let tmp_dir = tempfile::tempdir().into_diagnostic()?;
         let conanfile = build_conanfile(name, version);
@@ -83,7 +83,7 @@ impl ConanProvider {
 
         std::fs::create_dir_all(output_dir).into_diagnostic()?;
 
-        let output = self.runner.run(
+        let output = self.runner.run_streaming(
             "conan",
             &[
                 "install",
@@ -95,6 +95,7 @@ impl ConanProvider {
                 "--build=missing",
             ],
             None,
+            on_progress,
         )?;
 
         if !output.status.success() {
@@ -176,9 +177,25 @@ impl Provider for ConanProvider {
     }
 
     fn resolve(&self, name: &str, version: Option<&str>) -> Result<ResolvedDep> {
+        self.resolve_with_progress(name, version, &|_| {})
+    }
+
+    fn fetch(&self, dep: &ResolvedDep) -> Result<FetchedDep> {
+        let output_dir = self.conan_output_dir();
+        self.parse_pc_files(&output_dir, &dep.name)
+    }
+}
+
+impl ConanProvider {
+    pub fn resolve_with_progress(
+        &self,
+        name: &str,
+        version: Option<&str>,
+        on_progress: &dyn Fn(&str),
+    ) -> Result<ResolvedDep> {
         self.detect_conan()?;
         let output_dir = self.conan_output_dir();
-        self.install_package(name, version, &output_dir)?;
+        self.install_package(name, version, &output_dir, on_progress)?;
 
         let resolved_version = self.query_version(&output_dir, name);
 
@@ -187,11 +204,6 @@ impl Provider for ConanProvider {
             version: resolved_version,
             source: "conan".to_string(),
         })
-    }
-
-    fn fetch(&self, dep: &ResolvedDep) -> Result<FetchedDep> {
-        let output_dir = self.conan_output_dir();
-        self.parse_pc_files(&output_dir, &dep.name)
     }
 }
 
@@ -296,29 +308,11 @@ fn parse_pc_content(
     }
 }
 
-// --- Command runner abstraction for testing ---
-
-pub trait CommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output>;
-}
-
-struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output> {
-        let mut cmd = Command::new(program);
-        cmd.args(args);
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
-        cmd.output().into_diagnostic()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::process::Output;
     use std::sync::{Arc, Mutex};
 
     struct MockCall {

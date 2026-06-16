@@ -143,7 +143,10 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
             vcpkg_deps.len()
         ));
         let vcpkg = VcpkgProvider::new();
-        match vcpkg.install_packages(&vcpkg_deps) {
+        let on_progress = |msg: &str| {
+            spinner.set_message(msg.to_string());
+        };
+        match vcpkg.install_packages(&vcpkg_deps, &on_progress) {
             Ok(()) => {
                 let names: Vec<&str> = vcpkg_deps.iter().map(|p| p.name).collect();
                 style::finish_spinner_success(
@@ -214,7 +217,10 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
             DependencySource::Provider(ProviderKind::Conan) => {
                 let spinner = style::create_spinner(&format!("Resolving {name} (conan)…"));
                 let provider = ConanProvider::new();
-                match provider.resolve(name, spec.version.as_deref()) {
+                let on_progress = |msg: &str| {
+                    spinner.set_message(msg.to_string());
+                };
+                match provider.resolve_with_progress(name, spec.version.as_deref(), &on_progress) {
                     Ok(resolved) => {
                         style::finish_spinner_success(
                             &spinner,

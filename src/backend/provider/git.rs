@@ -1,8 +1,7 @@
-use super::{FetchedDep, Provider, ResolvedDep};
+use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
 use crate::util::paths::OrdoPaths;
 use miette::{bail, IntoDiagnostic, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 
 pub struct GitProvider {
     runner: Box<dyn CommandRunner>,
@@ -247,29 +246,11 @@ pub fn expand_git_shorthand(spec: &str) -> String {
     format!("https://github.com/{spec}")
 }
 
-// --- Command runner abstraction for testing ---
-
-pub trait CommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output>;
-}
-
-struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run(&self, program: &str, args: &[&str], cwd: Option<&Path>) -> Result<Output> {
-        let mut cmd = Command::new(program);
-        cmd.args(args);
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
-        cmd.output().into_diagnostic()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::process::Output;
     use std::sync::{Arc, Mutex};
 
     struct MockRunner {

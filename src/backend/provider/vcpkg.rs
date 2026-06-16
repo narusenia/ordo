@@ -96,7 +96,7 @@ impl VcpkgProvider {
 
     pub fn install_packages(
         &self,
-        packages: &[(&str, Option<&str>)],
+        packages: &[VcpkgPackageSpec<'_>],
     ) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
@@ -105,7 +105,7 @@ impl VcpkgProvider {
         let root = self.vcpkg_root()?;
         let triplet = Self::host_triplet();
 
-        let has_versioned = packages.iter().any(|(_, v)| v.is_some());
+        let has_versioned = packages.iter().any(|p| p.version.is_some());
         if has_versioned {
             self.ensure_full_clone(&root)?;
         }
@@ -136,7 +136,7 @@ impl VcpkgProvider {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
             let detail = if stderr.trim().is_empty() { &stdout } else { &stderr };
-            let names: Vec<&str> = packages.iter().map(|(n, _)| *n).collect();
+            let names: Vec<&str> = packages.iter().map(|p| p.name).collect();
             bail!(
                 "vcpkg install failed for [{}]:\n{}\n  \
                  help: check vcpkg logs for details",
@@ -246,7 +246,7 @@ impl Provider for VcpkgProvider {
     }
 
     fn resolve(&self, name: &str, version: Option<&str>) -> Result<ResolvedDep> {
-        self.install_packages(&[(name, version)])?;
+        self.install_packages(&[VcpkgPackageSpec { name, version }])?;
 
         let root = self.vcpkg_root()?;
         let triplet = Self::host_triplet();
@@ -266,23 +266,75 @@ impl Provider for VcpkgProvider {
     }
 }
 
-fn build_vcpkg_manifest_multi(packages: &[(&str, Option<&str>)], baseline: Option<&str>) -> String {
-    let deps: Vec<String> = packages
-        .iter()
-        .map(|(name, version)| {
-            let version_constraint = version
+pub struct VcpkgPackageSpec<'a> {
+    pub name: &'a str,
+    pub version: Option<&'a str>,
+}
+
+fn parse_version_constraint(version: Option<&str>) -> (Option<String>, bool) {
+    match version {
+        None => (None, false),
+        Some(v) if v.starts_with(">=") => {
+            (Some(normalize_vcpkg_version(v.trim_start_matches(">="))), false)
+        }
+        Some(v) if v.starts_with('^') || v.starts_with('~') => {
+            (Some(normalize_vcpkg_version(v.trim_start_matches('^').trim_start_matches('~'))), false)
+        }
+        Some(v) => {
+            let bare = v.strip_prefix('=').unwrap_or(v);
+            (Some(normalize_vcpkg_version(bare)), true)
+        }
+    }
+}
+
+fn normalize_vcpkg_version(v: &str) -> String {
+    let parts: Vec<&str> = v.split('.').collect();
+    match parts.len() {
+        1 => format!("{}.0.0", parts[0]),
+        2 => format!("{}.{}.0", parts[0], parts[1]),
+        _ => v.to_string(),
+    }
+}
+
+fn build_vcpkg_manifest_multi(packages: &[VcpkgPackageSpec<'_>], baseline: Option<&str>) -> String {
+    let mut deps = Vec::new();
+    let mut overrides = Vec::new();
+
+    for pkg in packages {
+        let (ver, pin) = parse_version_constraint(pkg.version);
+        let version_constraint = if pin {
+            String::new()
+        } else {
+            ver.as_deref()
                 .map(|v| format!(",\n      \"version>=\": \"{v}\""))
-                .unwrap_or_default();
-            format!("    {{\n      \"name\": \"{name}\"{version_constraint}\n    }}")
-        })
-        .collect();
+                .unwrap_or_default()
+        };
+        deps.push(format!(
+            "    {{\n      \"name\": \"{}\"{version_constraint}\n    }}",
+            pkg.name
+        ));
+        if pin
+            && let Some(v) = ver.as_deref()
+        {
+            overrides.push(format!(
+                "    {{\n      \"name\": \"{}\",\n      \"version\": \"{v}\"\n    }}",
+                pkg.name
+            ));
+        }
+    }
 
     let baseline_field = baseline
         .map(|b| format!(",\n  \"builtin-baseline\": \"{b}\""))
         .unwrap_or_default();
 
+    let overrides_field = if overrides.is_empty() {
+        String::new()
+    } else {
+        format!(",\n  \"overrides\": [\n{}\n  ]", overrides.join(",\n"))
+    };
+
     format!(
-        "{{\n  \"name\": \"ordo-deps\",\n  \"version\": \"0.0.0\"{baseline_field},\n  \"dependencies\": [\n{}\n  ]\n}}",
+        "{{\n  \"name\": \"ordo-deps\",\n  \"version\": \"0.0.0\"{baseline_field},\n  \"dependencies\": [\n{}\n  ]{overrides_field}\n}}",
         deps.join(",\n")
     )
 }
@@ -449,29 +501,50 @@ mod tests {
 
     #[test]
     fn build_vcpkg_manifest_without_version() {
-        let manifest = build_vcpkg_manifest_multi(&[("spdlog", None)], None);
+        let manifest = build_vcpkg_manifest_multi(
+            &[VcpkgPackageSpec { name: "spdlog", version: None }],
+            None,
+        );
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(!manifest.contains("version>="));
         assert!(!manifest.contains("builtin-baseline"));
     }
 
     #[test]
-    fn build_vcpkg_manifest_with_version() {
-        let manifest = build_vcpkg_manifest_multi(&[("spdlog", Some("1.14"))], Some("abc123"));
+    fn build_vcpkg_manifest_with_pin() {
+        let manifest = build_vcpkg_manifest_multi(
+            &[VcpkgPackageSpec { name: "spdlog", version: Some("1.14") }],
+            Some("abc123"),
+        );
         assert!(manifest.contains("\"name\": \"spdlog\""));
-        assert!(manifest.contains("\"version>=\": \"1.14\""));
-        assert!(manifest.contains("\"builtin-baseline\": \"abc123\""));
+        assert!(manifest.contains("\"overrides\""));
+        assert!(manifest.contains("\"version\": \"1.14.0\""));
+        assert!(!manifest.contains("version>="));
+    }
+
+    #[test]
+    fn build_vcpkg_manifest_with_range() {
+        let manifest = build_vcpkg_manifest_multi(
+            &[VcpkgPackageSpec { name: "spdlog", version: Some(">=1.14") }],
+            Some("abc123"),
+        );
+        assert!(manifest.contains("\"version>=\": \"1.14.0\""));
+        assert!(!manifest.contains("\"overrides\""));
     }
 
     #[test]
     fn build_vcpkg_manifest_multi_packages() {
-        let manifest = build_vcpkg_manifest_multi(&[
-            ("fmt", Some("11")),
-            ("raylib", None),
-        ], Some("abc123"));
+        let manifest = build_vcpkg_manifest_multi(
+            &[
+                VcpkgPackageSpec { name: "fmt", version: Some("11") },
+                VcpkgPackageSpec { name: "raylib", version: None },
+            ],
+            Some("abc123"),
+        );
         assert!(manifest.contains("\"name\": \"fmt\""));
         assert!(manifest.contains("\"name\": \"raylib\""));
-        assert!(manifest.contains("\"version>=\": \"11\""));
+        assert!(manifest.contains("\"overrides\""));
+        assert!(manifest.contains("\"version\": \"11.0.0\""));
     }
 
     #[test]

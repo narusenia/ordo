@@ -4,7 +4,7 @@ use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::{GitDepSpec, GitProvider};
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
-use crate::backend::provider::vcpkg::VcpkgProvider;
+use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use crate::backend::provider::{FetchedDep, Provider, ResolvedDep};
 use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
 use crate::util::style;
@@ -127,11 +127,14 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
     let mut fetched = Vec::new();
 
     // Pass 1: batch-install all vcpkg deps in one manifest
-    let vcpkg_deps: Vec<(&str, Option<&str>)> = manifest
+    let vcpkg_deps: Vec<VcpkgPackageSpec<'_>> = manifest
         .dependencies
         .iter()
         .filter(|(_, spec)| spec.source_kind() == DependencySource::Provider(ProviderKind::Vcpkg))
-        .map(|(name, spec)| (name.as_str(), spec.version.as_deref()))
+        .map(|(name, spec)| VcpkgPackageSpec {
+            name: name.as_str(),
+            version: spec.version.as_deref(),
+        })
         .collect();
 
     if !vcpkg_deps.is_empty() {
@@ -142,7 +145,7 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
         let vcpkg = VcpkgProvider::new();
         match vcpkg.install_packages(&vcpkg_deps) {
             Ok(()) => {
-                let names: Vec<&str> = vcpkg_deps.iter().map(|(n, _)| *n).collect();
+                let names: Vec<&str> = vcpkg_deps.iter().map(|p| p.name).collect();
                 style::finish_spinner_success(
                     &spinner,
                     "Installed",

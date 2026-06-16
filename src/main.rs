@@ -25,11 +25,25 @@ fn main() -> Result<()> {
         Command::Init => {
             cli::init::run()?;
         }
-        Command::Build { .. } => {
-            eprintln!("ordo build: not yet implemented");
+        Command::Build {
+            release,
+            profile,
+            jobs,
+            target,
+            no_cache,
+            ..
+        } => {
+            let opts = cli::build::BuildOptions {
+                release,
+                profile,
+                jobs,
+                target,
+                no_cache,
+            };
+            cli::build::run(&opts)?;
         }
-        Command::Run { .. } => {
-            eprintln!("ordo run: not yet implemented");
+        Command::Run { args, release } => {
+            cli::run::run(&args, release)?;
         }
         Command::Test { .. } => {
             eprintln!("ordo test: not yet implemented");
@@ -37,8 +51,8 @@ fn main() -> Result<()> {
         Command::Check => {
             eprintln!("ordo check: not yet implemented");
         }
-        Command::Clean { .. } => {
-            eprintln!("ordo clean: not yet implemented");
+        Command::Clean { cache } => {
+            cli::clean::run(cache)?;
         }
         Command::Fmt { .. } => {
             eprintln!("ordo fmt: not yet implemented");

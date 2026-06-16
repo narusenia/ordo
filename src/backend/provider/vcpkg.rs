@@ -271,17 +271,28 @@ pub struct VcpkgPackageSpec<'a> {
     pub version: Option<&'a str>,
 }
 
-fn parse_version_constraint(version: Option<&str>) -> (Option<&str>, bool) {
+fn parse_version_constraint(version: Option<&str>) -> (Option<String>, bool) {
     match version {
         None => (None, false),
-        Some(v) if v.starts_with(">=") => (Some(v.trim_start_matches(">=")), false),
+        Some(v) if v.starts_with(">=") => {
+            (Some(normalize_vcpkg_version(v.trim_start_matches(">="))), false)
+        }
         Some(v) if v.starts_with('^') || v.starts_with('~') => {
-            (Some(v.trim_start_matches('^').trim_start_matches('~')), false)
+            (Some(normalize_vcpkg_version(v.trim_start_matches('^').trim_start_matches('~'))), false)
         }
         Some(v) => {
             let bare = v.strip_prefix('=').unwrap_or(v);
-            (Some(bare), true)
+            (Some(normalize_vcpkg_version(bare)), true)
         }
+    }
+}
+
+fn normalize_vcpkg_version(v: &str) -> String {
+    let parts: Vec<&str> = v.split('.').collect();
+    match parts.len() {
+        1 => format!("{}.0.0", parts[0]),
+        2 => format!("{}.{}.0", parts[0], parts[1]),
+        _ => v.to_string(),
     }
 }
 
@@ -294,7 +305,8 @@ fn build_vcpkg_manifest_multi(packages: &[VcpkgPackageSpec<'_>], baseline: Optio
         let version_constraint = if pin {
             String::new()
         } else {
-            ver.map(|v| format!(",\n      \"version>=\": \"{v}\""))
+            ver.as_deref()
+                .map(|v| format!(",\n      \"version>=\": \"{v}\""))
                 .unwrap_or_default()
         };
         deps.push(format!(
@@ -302,7 +314,7 @@ fn build_vcpkg_manifest_multi(packages: &[VcpkgPackageSpec<'_>], baseline: Optio
             pkg.name
         ));
         if pin
-            && let Some(v) = ver
+            && let Some(v) = ver.as_deref()
         {
             overrides.push(format!(
                 "    {{\n      \"name\": \"{}\",\n      \"version\": \"{v}\"\n    }}",
@@ -506,7 +518,7 @@ mod tests {
         );
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(manifest.contains("\"overrides\""));
-        assert!(manifest.contains("\"version\": \"1.14\""));
+        assert!(manifest.contains("\"version\": \"1.14.0\""));
         assert!(!manifest.contains("version>="));
     }
 
@@ -516,7 +528,7 @@ mod tests {
             &[VcpkgPackageSpec { name: "spdlog", version: Some(">=1.14") }],
             Some("abc123"),
         );
-        assert!(manifest.contains("\"version>=\": \"1.14\""));
+        assert!(manifest.contains("\"version>=\": \"1.14.0\""));
         assert!(!manifest.contains("\"overrides\""));
     }
 
@@ -532,7 +544,7 @@ mod tests {
         assert!(manifest.contains("\"name\": \"fmt\""));
         assert!(manifest.contains("\"name\": \"raylib\""));
         assert!(manifest.contains("\"overrides\""));
-        assert!(manifest.contains("\"version\": \"11\""));
+        assert!(manifest.contains("\"version\": \"11.0.0\""));
     }
 
     #[test]

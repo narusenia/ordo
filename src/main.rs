@@ -19,8 +19,8 @@ fn main() -> Result<()> {
     let _paths = OrdoPaths::resolve();
 
     match cli.command {
-        Command::New { name, lib, no_git } => {
-            cli::new::run(&name, lib, no_git)?;
+        Command::New { name, lib, lang, no_git } => {
+            cli::new::run(&name, lib, lang, no_git)?;
         }
         Command::Init => {
             cli::init::run()?;

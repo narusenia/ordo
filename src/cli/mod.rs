@@ -29,6 +29,12 @@ pub enum ColorMode {
     Never,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ProjectLang {
+    C,
+    Cpp,
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     /// Create a new project
@@ -39,6 +45,10 @@ pub enum Command {
         /// Create a library project
         #[arg(long)]
         lib: bool,
+
+        /// Project language
+        #[arg(long, default_value = "cpp")]
+        lang: ProjectLang,
 
         /// Skip git initialization
         #[arg(long)]

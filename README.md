@@ -1,233 +1,187 @@
 # Ordo
 
 > A modern project orchestrator for C and C++
->
-> Cargo-like developer experience for native development.
 
-Ordo is a Rust-based build and project management tool that unifies build systems, dependency management, toolchains, testing, packaging, and developer tooling into a single workflow.
+Cargo-like developer experience for native development. Ordo unifies build, dependency management, and developer tooling into a single CLI.
 
-## Philosophy
+## Install
 
-> Don't replace the ecosystem. Orchestrate it.
+```sh
+curl -fsSL https://raw.githubusercontent.com/narusenia/ordo/main/install.sh | sh
+```
 
-Modern C/C++ development requires juggling CMake, Ninja, vcpkg, Conan, pkg-config, clangd, ccache, clang-format, clang-tidy, and more. Ordo provides a unified interface over these tools while preserving compatibility with existing ecosystems.
+Or download a binary directly from [Releases](https://github.com/narusenia/ordo/releases).
+
+| Platform | Binary |
+|----------|--------|
+| Linux x86_64 | `ordo-linux-x86_64` |
+| Linux aarch64 | `ordo-linux-aarch64` |
+| macOS x86_64 | `ordo-macos-x86_64` |
+| macOS aarch64 | `ordo-macos-aarch64` |
+| Windows x86_64 | `ordo-windows-x86_64.exe` |
+
+### Requirements
+
+- [Ninja](https://ninja-build.org/) build system
+- A C/C++ compiler (Clang, GCC, or MSVC)
 
 ## Quick Start
 
-```bash
+```sh
 ordo new myapp
 cd myapp
+ordo add vcpkg:fmt@11.2.0
 ordo build
 ordo run
 ```
 
 ## Features
 
-### Project Management
+### Project Scaffolding
 
-```bash
-ordo new myapp          # Create executable project
-ordo new mylib --lib    # Create library project
-ordo init               # Initialize in existing directory
+```sh
+ordo new                    # Interactive — prompts for name, language, type
+ordo new myapp              # C++ executable (default)
+ordo new mylib --lib        # C++ static library
+ordo new myapp --lang c     # C project
+ordo init                   # Initialize in existing directory
 ```
 
 ### Build
 
-```bash
-ordo build              # Debug build
-ordo build --release    # Release build
-ordo run                # Build and run
-ordo check              # Syntax check only (fast)
-ordo clean              # Remove build artifacts
+```sh
+ordo build                  # Debug build
+ordo build --release        # Release build
+ordo run                    # Build and run
+ordo clean                  # Remove build artifacts
 ```
 
+Ordo generates Ninja build files directly — no CMake in the pipeline. Automatic compiler detection, C/C++ source separation, and rich progress display with streaming output.
+
 ### Dependencies
+
+Five provider backends, unified under one CLI:
 
 ```toml
 # Ordo.toml
 [dependencies]
-core = { path = "../core" }
-fmt = { git = "https://github.com/fmtlib/fmt", tag = "11.1.0" }
-spdlog = { version = "1.14", provider = "vcpkg" }
+raylib = { version = "6.0", provider = "vcpkg" }
+sdl = { version = "3.4.8", provider = "conan" }
 openssl = { provider = "pkg-config" }
-zlib = { provider = "system" }
+m = { provider = "system" }
+fmt = { git = "https://github.com/fmtlib/fmt", tag = "11.1.0" }
 ```
 
-```bash
-ordo add fmt            # Add dependency
-ordo update             # Update lock file
-ordo tree               # Show dependency tree
+#### Adding dependencies
+
+```sh
+ordo add vcpkg:raylib@6.0       # vcpkg with pinned version
+ordo add vcpkg:fmt@>=11         # vcpkg with minimum version
+ordo add conan:sdl@3.4.8        # Conan
+ordo add system:m                # System library
+ordo add git:fmtlib/fmt@11.1.0  # Git (GitHub shorthand)
+ordo add git:codeberg.org/user/repo  # Git (custom host)
+ordo add raylib                  # Interactive provider selection
 ```
 
-Supported providers: **vcpkg**, **Conan**, **pkg-config**, **system**, **git**, **Ordo Registry**
+Version operators:
+- `@11.2.0` or `@=11.2.0` — pin to exact version
+- `@>=11` — minimum version
+- `@^11` — compatible version (>=11.0.0)
+- No version — latest
 
-### Workspaces
+#### Dependency tree
 
-```toml
-[workspace]
-members = ["apps/*", "libs/*"]
-
-[workspace.dependencies]
-fmt = "11"
+```sh
+ordo tree
+```
+```
+myapp v0.1.0
+├── raylib v6.0 (vcpkg)
+│   libs: glfw3, nanosvg, nanosvgrast, raylib
+│   frameworks: Cocoa, CoreFoundation, IOKit
+│   include: /Users/.../vcpkg/installed/arm64-osx/include
+├── sdl v3.4.8 (conan)
+│   libs: SDL3
+│   frameworks: AVFoundation, CoreHaptics, Cocoa, ...
+└── m (system)
+    libs: m
 ```
 
-### Testing
+#### Update
 
-```bash
-ordo test               # Run all tests
-ordo test --filter name # Filter tests
-ordo test --jobs 4      # Parallel execution
+```sh
+ordo update                 # Re-resolve all dependencies
+ordo update fmt             # Re-resolve a specific dependency
 ```
 
-Auto-detects GoogleTest, Catch2, and doctest.
+### Provider Details
 
-### Code Quality
+| Provider | Auto-install | Version pinning | Platforms |
+|----------|-------------|-----------------|-----------|
+| **vcpkg** | Yes (auto-bootstrap) | `overrides` for pin, `version>=` for range | All |
+| **Conan** | Requires `conan` CLI | Via Conan version ranges | All |
+| **pkg-config** | No (system packages) | `--atleast-version` | Linux, macOS |
+| **system** | No | N/A | All |
+| **git** | Yes (clone + cache) | Tag, branch, or rev | All |
 
-```bash
-ordo fmt                # Format (clang-format)
-ordo fmt --check        # Check formatting (CI)
-ordo lint               # Lint (clang-tidy)
-ordo lint --fix         # Auto-fix lint issues
-```
-
-### C++ Modules
-
-First-class support for C++20 modules:
-
-```toml
-[modules]
-enabled = true
-import-std = true
-```
-
-Automatic module dependency scanning and BMI management across Clang, GCC, and MSVC.
-
-### Cross-Compilation
-
-```bash
-ordo build --target aarch64-linux-gnu
-```
-
-```toml
-[target.aarch64-linux-gnu]
-compiler = "clang"
-sysroot = "/usr/aarch64-linux-gnu"
-```
-
-### Build Profiles
-
-```toml
-[profile.dev]
-opt-level = 0
-debug = true
-sanitize = ["address", "undefined"]
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-strip = true
-
-[profile.custom]
-inherits = "release"
-opt-level = "s"
-```
-
-### Feature Flags
-
-```toml
-[features]
-default = ["logging"]
-logging = []
-gui = ["dep:qt"]
-
-[dependencies]
-qt = { provider = "vcpkg", optional = true }
-```
-
-```bash
-ordo build --features gui
-```
-
-### Watch Mode
-
-```bash
-ordo watch build
-ordo watch test
-ordo watch run
-```
-
-### IDE Integration
-
-```bash
-ordo generate vscode
-ordo generate clion
-ordo generate clangd
-```
-
-`compile_commands.json` is auto-generated at the project root.
-
-### CMake Compatibility
-
-```bash
-ordo import cmake       # CMakeLists.txt -> Ordo.toml (migration aid)
-ordo generate cmake     # Ordo.toml -> CMakeLists.txt
-ordo generate presets   # Generate CMakePresets.json
-```
-
-### CI
-
-```bash
-ordo ci                 # Run full CI pipeline
-ordo generate github-actions
-ordo generate gitlab-ci
-```
-
-### Packaging
-
-```bash
-ordo install            # Install to system (with pkg-config + CMake config)
-ordo package            # Create distributable archive
-ordo publish            # Publish to Ordo Registry
-```
-
-### Diagnostics
-
-```bash
-ordo doctor             # Check development environment
-ordo config show        # Show resolved configuration
-ordo config show --origin  # Show where each value comes from
-```
-
-## Build Backend
-
-Ordo generates Ninja build files directly — no CMake in the build pipeline. This enables full control over C++ modules, dependency scanning, and build optimization while leveraging Ninja's battle-tested incremental build and parallelism.
-
-## Configuration
-
-Project configuration lives in `Ordo.toml`:
+### Configuration
 
 ```toml
 [package]
 name = "myapp"
 version = "0.1.0"
-type = "executable"
+type = "executable"          # executable, static-library, shared-library
 
 [language]
-cpp = "c++20"
+cpp = "c++20"                # c++17, c++20, c++23, c++26
+# or
+c = "c23"                    # c11, c17, c23
 
 [toolchain]
-compiler = "clang"
-linker = "lld"
-
-[cache]
-tool = "auto"  # sccache > ccache > none
+compiler = "clang"           # clang, gcc, msvc
+linker = "lld"               # lld, mold, gold, default
 ```
+
+### CLI Output
+
+Ordo follows Cargo's output conventions with rich terminal UI:
+
+- Colored status verbs (`Compiling`, `Linking`, `Resolved`, etc.)
+- Spinners with real-time streaming detail for long operations
+- Interactive prompts for `ordo new` and `ordo add` (via promptuity)
+- `compile_commands.json` auto-generated for IDE integration
+
+## Philosophy
+
+> Don't replace the ecosystem. Orchestrate it.
+
+Modern C/C++ development requires juggling Ninja, vcpkg, Conan, pkg-config, and more. Ordo provides a unified interface over these tools while preserving compatibility with existing ecosystems.
+
+## Roadmap
+
+Features planned for future releases:
+
+- **Workspaces** — multi-project builds with shared dependencies
+- **Build profiles** — custom optimization, sanitizer, and LTO settings
+- **Feature flags** — conditional compilation and optional dependencies
+- **Testing** — `ordo test` with GoogleTest/Catch2/doctest auto-detection
+- **Code quality** — `ordo fmt` (clang-format), `ordo lint` (clang-tidy)
+- **C++ modules** — C++20 module dependency scanning and BMI management
+- **Cross-compilation** — `ordo build --target aarch64-linux-gnu`
+- **Build cache** — sccache/ccache integration
+- **Watch mode** — `ordo watch build/test/run`
+- **IDE generation** — VSCode, CLion, clangd configs
+- **Packaging** — `ordo install`, `ordo package`, `ordo publish`
+- **Git dep build integration** — build Ordo.toml/CMakeLists.txt sub-projects
+
+See `docs/implementation/plan.md` for the full task breakdown.
 
 ## License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.

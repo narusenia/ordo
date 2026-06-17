@@ -136,20 +136,15 @@ impl MemberDag {
 
         for member in members {
             let mut deps = Vec::new();
-            for (_dep_name, spec) in &member.manifest.dependencies {
-                if spec.source_kind() == DependencySource::Path {
-                    if let Some(ref path) = spec.path {
-                        let dep_dir = member.dir.join(path);
-                        if let Ok(dep_manifest_path) = std::fs::canonicalize(dep_dir.join("Ordo.toml")) {
-                            if let Ok(dep_manifest) = Manifest::load(&dep_manifest_path) {
-                                if let Some(ref pkg) = dep_manifest.package {
-                                    if member_names.contains(pkg.name.as_str()) {
-                                        deps.push(pkg.name.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
+            for spec in member.manifest.dependencies.values() {
+                if spec.source_kind() == DependencySource::Path
+                    && let Some(ref path) = spec.path
+                    && let Ok(dep_manifest_path) = std::fs::canonicalize(member.dir.join(path).join("Ordo.toml"))
+                    && let Ok(dep_manifest) = Manifest::load(&dep_manifest_path)
+                    && let Some(ref pkg) = dep_manifest.package
+                    && member_names.contains(pkg.name.as_str())
+                {
+                    deps.push(pkg.name.clone());
                 }
             }
             adjacency.insert(member.name.clone(), deps);

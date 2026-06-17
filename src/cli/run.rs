@@ -14,6 +14,7 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
         locked: false,
         frozen: false,
         verbose: 0,
+        package: None,
     };
 
     let BuildResult {

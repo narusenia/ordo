@@ -365,16 +365,16 @@ impl Manifest {
             Self::validate_semver(&pkg.version)?;
         }
 
-        if let Some(ref ws) = self.workspace {
-            if ws.members.is_empty() {
-                return Err(ManifestError::ValidationError {
-                    message: "workspace must have at least one member".to_string(),
-                    help: Some(
-                        "add member paths to [workspace] members = [\"libs/*\", \"apps/*\"]"
-                            .to_string(),
-                    ),
-                });
-            }
+        if let Some(ref ws) = self.workspace
+            && ws.members.is_empty()
+        {
+            return Err(ManifestError::ValidationError {
+                message: "workspace must have at least one member".to_string(),
+                help: Some(
+                    "add member paths to [workspace] members = [\"libs/*\", \"apps/*\"]"
+                        .to_string(),
+                ),
+            });
         }
 
         Ok(())

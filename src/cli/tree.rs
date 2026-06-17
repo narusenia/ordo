@@ -23,7 +23,7 @@ pub fn run(dir: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let fetched = fetch_all_for_tree(&manifest);
+    let fetched = fetch_all_for_tree(&manifest, dir);
 
     let deps: Vec<_> = manifest.dependencies.iter().collect();
     let last_idx = deps.len() - 1;
@@ -68,7 +68,10 @@ pub fn run(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn fetch_all_for_tree(manifest: &Manifest) -> std::collections::HashMap<String, FetchedDep> {
+fn fetch_all_for_tree(
+    manifest: &Manifest,
+    dir: &Path,
+) -> std::collections::HashMap<String, FetchedDep> {
     let mut result = std::collections::HashMap::new();
 
     // Batch vcpkg install first
@@ -112,6 +115,24 @@ fn fetch_all_for_tree(manifest: &Manifest) -> std::collections::HashMap<String, 
                 p.resolve(name, spec.version.as_deref())
                     .and_then(|r| p.fetch(&r))
                     .ok()
+            }
+            DependencySource::Path => {
+                let dep_dir = dir.join(spec.path.as_ref().unwrap());
+                let include_dir = dep_dir.join("include");
+                let include_dirs = if include_dir.exists() {
+                    vec![include_dir]
+                } else if dep_dir.exists() {
+                    vec![dep_dir]
+                } else {
+                    Vec::new()
+                };
+                Some(FetchedDep {
+                    name: name.clone(),
+                    include_dirs,
+                    lib_dirs: Vec::new(),
+                    libs: Vec::new(),
+                    frameworks: Vec::new(),
+                })
             }
             _ => None,
         };

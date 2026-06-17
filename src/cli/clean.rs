@@ -1,17 +1,35 @@
+use crate::core::manifest::Manifest;
 use crate::util::style;
 use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 
 pub fn run(cache: bool) -> Result<()> {
-    let target = Path::new("target");
+    let cwd = std::env::current_dir().into_diagnostic()?;
+    let manifest_path = cwd.join("Ordo.toml");
+
+    let target = cwd.join("target");
     if target.exists() {
-        let size = dir_size(target);
-        fs::remove_dir_all(target).into_diagnostic()?;
+        let size = dir_size(&target);
+        fs::remove_dir_all(&target).into_diagnostic()?;
         let size_str = format_size(size);
         style::success("Removed", &format!("target/ ({size_str} freed)"));
     } else {
-        style::skip("Nothing to clean", "");
+        style::skip("Nothing to clean", "target/");
+    }
+
+    if manifest_path.exists() {
+        let lock_path = cwd.join("Ordo.lock");
+        if lock_path.exists() {
+            fs::remove_file(&lock_path).into_diagnostic()?;
+            style::success("Removed", "Ordo.lock");
+        }
+
+        if let Ok(manifest) = Manifest::load(&manifest_path)
+            && manifest.is_workspace()
+        {
+            clean_workspace_member_artifacts(&cwd);
+        }
     }
 
     if cache {
@@ -19,6 +37,38 @@ pub fn run(cache: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn clean_workspace_member_artifacts(root: &Path) {
+    use crate::core::workspace::Workspace;
+
+    let Ok(ws) = Workspace::load(root) else {
+        return;
+    };
+
+    let mut cleaned = 0u64;
+    for member in &ws.members {
+        let member_target = member.dir.join("target");
+        if member_target.exists() {
+            cleaned += dir_size(&member_target);
+            let _ = fs::remove_dir_all(&member_target);
+        }
+        let member_lock = member.dir.join("Ordo.lock");
+        if member_lock.exists() {
+            let _ = fs::remove_file(&member_lock);
+        }
+        let member_cc = member.dir.join("compile_commands.json");
+        if member_cc.exists() {
+            let _ = fs::remove_file(&member_cc);
+        }
+    }
+
+    if cleaned > 0 {
+        style::success(
+            "Removed",
+            &format!("member artifacts ({} freed)", format_size(cleaned)),
+        );
+    }
 }
 
 fn dir_size(path: &Path) -> u64 {

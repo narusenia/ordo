@@ -11,6 +11,8 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
         jobs: None,
         target: None,
         no_cache: false,
+        locked: false,
+        frozen: false,
         verbose: 0,
     };
 

@@ -46,6 +46,8 @@ fn main() -> Result<()> {
             jobs,
             target,
             no_cache,
+            locked,
+            frozen,
             ..
         } => {
             let opts = cli::build::BuildOptions {
@@ -54,6 +56,8 @@ fn main() -> Result<()> {
                 jobs,
                 target,
                 no_cache,
+                locked,
+                frozen,
                 verbose: cli.verbose,
             };
             cli::build::run(&opts)?;

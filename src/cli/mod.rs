@@ -179,12 +179,16 @@ pub enum Command {
         spec: String,
 
         /// Provider (pkg-config, system, vcpkg, conan, path, git). Interactive if omitted.
-        #[arg(short, long)]
+        #[arg(short = 'P', long)]
         provider: Option<String>,
 
         /// Skip provider verification (don't check if the package exists)
         #[arg(long)]
         no_verify: bool,
+
+        /// Lua build script path (git dependencies only)
+        #[arg(long)]
+        with: Option<String>,
     },
 
     /// Update dependencies

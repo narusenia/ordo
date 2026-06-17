@@ -41,6 +41,7 @@ pub struct BuildResult {
 
 pub struct BuildContext {
     pub project_root: PathBuf,
+    pub workspace_root: Option<PathBuf>,
     pub profile_name: String,
     pub release: bool,
     pub jobs: Option<u32>,
@@ -69,6 +70,7 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
 
     let mut ctx = BuildContext {
         project_root,
+        workspace_root: None,
         profile_name,
         release: opts.release,
         jobs: opts.jobs,
@@ -115,11 +117,14 @@ fn run_workspace_build(
 
     let mut last_result = None;
 
+    let ws_root = root_dir.to_path_buf();
+
     for member_name in &members_to_build {
         if member_name == "__root__" {
             let canonical = fs::canonicalize(root_dir).into_diagnostic()?;
             let mut ctx = BuildContext {
                 project_root: root_dir.to_path_buf(),
+                workspace_root: Some(ws_root.clone()),
                 profile_name: profile_name.to_string(),
                 release: opts.release,
                 jobs: opts.jobs,
@@ -144,6 +149,7 @@ fn run_workspace_build(
 
         let mut ctx = BuildContext {
             project_root: member_dir.clone(),
+            workspace_root: Some(ws_root.clone()),
             profile_name: profile_name.to_string(),
             release: opts.release,
             jobs: opts.jobs,
@@ -166,7 +172,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         bail!("Ordo.toml not found in {}", ctx.project_root.display());
     }
 
-    let manifest = Manifest::load(&manifest_path)?;
+    let mut manifest = Manifest::load(&manifest_path)?;
 
     if manifest.package.is_none() {
         bail!(
@@ -174,12 +180,14 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
             ctx.project_root.display()
         );
     }
-    let build_dir = ctx
-        .project_root
-        .join(format!("target/{}/build", ctx.profile_name));
-    let output_dir = ctx
-        .project_root
-        .join(format!("target/{}", ctx.profile_name));
+
+    if let Some(ref ws_root) = ctx.workspace_root {
+        resolve_workspace_deps_for_member(&mut manifest, ws_root)?;
+    }
+
+    let project_root = fs::canonicalize(&ctx.project_root).into_diagnostic()?;
+    let build_dir = project_root.join(format!("target/{}/build", ctx.profile_name));
+    let output_dir = project_root.join(format!("target/{}", ctx.profile_name));
 
     fs::create_dir_all(&build_dir).into_diagnostic()?;
     fs::create_dir_all(&output_dir).into_diagnostic()?;
@@ -204,7 +212,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         compiler.as_ref(),
         sources,
         build_dir.clone(),
-        ctx.project_root.clone(),
+        project_root.clone(),
         manifest.package().name.clone(),
         manifest.package().package_type,
         compile_flags,
@@ -215,7 +223,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
 
     fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
     fs::write(
-        ctx.project_root.join("compile_commands.json"),
+        project_root.join("compile_commands.json"),
         &output.compile_commands,
     )
     .into_diagnostic()?;
@@ -324,6 +332,44 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
 fn load_dep_cache(path: &Path) -> Result<Vec<FetchedDep>> {
     let content = fs::read_to_string(path).into_diagnostic()?;
     serde_json::from_str(&content).into_diagnostic()
+}
+
+fn resolve_workspace_deps_for_member(manifest: &mut Manifest, ws_root: &Path) -> Result<()> {
+    let ws_manifest_path = ws_root.join("Ordo.toml");
+    if !ws_manifest_path.exists() {
+        return Ok(());
+    }
+    let ws_manifest = Manifest::load(&ws_manifest_path)?;
+    let ws_config = match ws_manifest.workspace {
+        Some(ref ws) => ws,
+        None => return Ok(()),
+    };
+
+    for (name, spec) in &mut manifest.dependencies {
+        if spec.workspace {
+            let ws_spec = ws_config.dependencies.get(name).ok_or_else(|| {
+                miette::miette!(
+                    "dependency '{}' uses `workspace = true` but is not in [workspace.dependencies]",
+                    name
+                )
+            })?;
+            *spec = ws_spec.clone();
+        }
+    }
+
+    for (name, spec) in &mut manifest.dev_dependencies {
+        if spec.workspace {
+            let ws_spec = ws_config.dependencies.get(name).ok_or_else(|| {
+                miette::miette!(
+                    "dev-dependency '{}' uses `workspace = true` but is not in [workspace.dependencies]",
+                    name
+                )
+            })?;
+            *spec = ws_spec.clone();
+        }
+    }
+
+    Ok(())
 }
 
 fn save_dep_cache(path: &Path, deps: &[FetchedDep]) -> Result<()> {
@@ -479,6 +525,8 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                     Ok(resolved) => {
                         sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
                         let script = spec.with.as_ref().map(std::path::Path::new);
+                        let script_root =
+                            ctx.workspace_root.as_deref().unwrap_or(&ctx.project_root);
                         if script.is_some() {
                             let bw = style::create_spinner_with_detail(&format!(
                                 "Building {name} (lua)…"
@@ -490,7 +538,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                                 name,
                                 &git_spec,
                                 script,
-                                Some(&ctx.project_root),
+                                Some(script_root),
                                 &on_lua_progress,
                             ) {
                                 Ok(dep) => {
@@ -541,7 +589,11 @@ fn build_compile_flags(
     let mut include_dirs = Vec::new();
     let include_path = ctx.project_root.join("include");
     if include_path.exists() {
-        include_dirs.push(include_path);
+        if let Ok(canonical) = fs::canonicalize(&include_path) {
+            include_dirs.push(canonical);
+        } else {
+            include_dirs.push(include_path);
+        }
     }
 
     for dep in deps {
@@ -591,7 +643,7 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
     }
 
     let include_dir = dep_dir.join("include");
-    let include_dirs = if include_dir.exists() {
+    let mut include_dirs = if include_dir.exists() {
         vec![fs::canonicalize(&include_dir).into_diagnostic()?]
     } else {
         vec![fs::canonicalize(dep_dir).into_diagnostic()?]
@@ -623,7 +675,18 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
     build_result?;
 
     let dep_output_dir = dep_dir.join(format!("target/{}", ctx.profile_name));
-    let (lib_dirs, libs) = scan_library_artifacts(&dep_output_dir);
+    let (mut lib_dirs, mut libs) = scan_library_artifacts(&dep_output_dir);
+    let mut frameworks = Vec::new();
+
+    let dep_cache_path = dep_dir.join("target").join(DEP_CACHE_FILE);
+    if let Ok(transitive) = load_dep_cache(&dep_cache_path) {
+        for t in &transitive {
+            include_dirs.extend(t.include_dirs.iter().cloned());
+            lib_dirs.extend(t.lib_dirs.iter().cloned());
+            libs.extend(t.libs.iter().cloned());
+            frameworks.extend(t.frameworks.iter().cloned());
+        }
+    }
 
     style::success("Built", &format!("{name} (path)"));
 
@@ -632,7 +695,7 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
         include_dirs,
         lib_dirs,
         libs,
-        frameworks: Vec::new(),
+        frameworks,
     })
 }
 
@@ -923,6 +986,7 @@ mod tests {
     fn fetch_path_dep_missing_dir() {
         let mut ctx = BuildContext {
             project_root: PathBuf::from("/tmp"),
+            workspace_root: None,
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -943,6 +1007,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
+            workspace_root: None,
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -976,6 +1041,7 @@ type = "static-library"
         let canonical = fs::canonicalize(&dep_dir).unwrap();
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
+            workspace_root: None,
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -1010,6 +1076,7 @@ type = "static-library"
 
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
+            workspace_root: None,
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,

@@ -131,16 +131,25 @@ impl LuaRunner {
                     let output = std::process::Command::new(&command)
                         .args(&cmd_args)
                         .current_dir(&src_dir)
-                        .stdout(std::process::Stdio::inherit())
-                        .stderr(std::process::Stdio::inherit())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
                         .output()
                         .map_err(|e| LuaError::external(format!("exec '{command}': {e}")))?;
 
                     let code = output.status.code().unwrap_or(-1);
 
                     if !output.status.success() && !ignore_errors {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let mut detail = String::new();
+                        if !stdout.is_empty() {
+                            detail.push_str(&stdout);
+                        }
+                        if !stderr.is_empty() {
+                            detail.push_str(&stderr);
+                        }
                         return Err(LuaError::external(format!(
-                            "command '{command}' failed with exit code {code}"
+                            "command '{command}' failed with exit code {code}\n{detail}"
                         )));
                     }
 

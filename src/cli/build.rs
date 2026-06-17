@@ -478,7 +478,14 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 match provider.resolve_git(name, &git_spec, &on_progress) {
                     Ok(resolved) => {
                         sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
-                        provider.fetch_git(name, &git_spec, &on_progress)?
+                        let script = spec.with.as_ref().map(std::path::Path::new);
+                        provider.fetch_git_with_script(
+                            name,
+                            &git_spec,
+                            script,
+                            Some(&ctx.project_root),
+                            &on_progress,
+                        )?
                     }
                     Err(e) => {
                         sw.finish_error("Failed", &format!("{name} (git)"));

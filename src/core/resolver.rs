@@ -21,8 +21,8 @@ pub fn resolve_dependencies(manifest: &Manifest) -> Result<Vec<ResolvedPackage>>
     }
 
     let mut provider = OfflineDependencyProvider::<String, SemverRanges>::new();
-    let root_name = format!("{}@root", manifest.package.name);
-    let root_version = parse_version(&manifest.package.version)?;
+    let root_name = format!("{}@root", manifest.package().name);
+    let root_version = parse_version(&manifest.package().version)?;
 
     let mut root_deps: Vec<(String, SemverRanges)> = Vec::new();
     let mut source_map: BTreeMap<String, DependencySource> = BTreeMap::new();

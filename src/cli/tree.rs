@@ -16,7 +16,7 @@ pub fn run(dir: &Path) -> Result<()> {
 
     let manifest = Manifest::load(&manifest_path)?;
 
-    eprintln!("{} v{}", manifest.package.name, manifest.package.version);
+    eprintln!("{} v{}", manifest.package().name, manifest.package().version);
 
     if manifest.dependencies.is_empty() {
         style::meta("no dependencies");

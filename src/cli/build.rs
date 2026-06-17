@@ -107,8 +107,8 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         sources,
         build_dir.clone(),
         ctx.project_root.clone(),
-        manifest.package.name.clone(),
-        manifest.package.package_type,
+        manifest.package().name.clone(),
+        manifest.package().package_type,
         compile_flags,
         link_flags,
     );
@@ -128,8 +128,8 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
 
     let output_path = resolve_output_path(
         &output_dir,
-        &manifest.package.name,
-        manifest.package.package_type,
+        &manifest.package().name,
+        manifest.package().package_type,
     );
 
     let profile_desc = if ctx.profile_name == "release" {
@@ -149,7 +149,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
 
     Ok(BuildResult {
         output_path,
-        package_type: manifest.package.package_type,
+        package_type: manifest.package().package_type,
     })
 }
 

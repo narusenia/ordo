@@ -666,3 +666,135 @@ fn resolve_output_path(output_dir: &Path, name: &str, package_type: PackageType)
         PackageType::SharedLibrary => output_dir.join(format!("lib{name}.so")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn scan_library_artifacts_finds_libs() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("libfoo.a"), b"").unwrap();
+        fs::write(tmp.path().join("libbar.so"), b"").unwrap();
+        fs::write(tmp.path().join("libbaz.dylib"), b"").unwrap();
+        fs::write(tmp.path().join("qux.lib"), b"").unwrap();
+        fs::write(tmp.path().join("README.md"), b"").unwrap();
+
+        let (lib_dirs, libs) = scan_library_artifacts(tmp.path());
+        assert_eq!(lib_dirs.len(), 1);
+        assert_eq!(lib_dirs[0], tmp.path());
+        assert_eq!(libs, vec!["bar", "baz", "foo", "qux"]);
+    }
+
+    #[test]
+    fn scan_library_artifacts_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let (lib_dirs, libs) = scan_library_artifacts(tmp.path());
+        assert!(lib_dirs.is_empty());
+        assert!(libs.is_empty());
+    }
+
+    #[test]
+    fn scan_library_artifacts_nonexistent_dir() {
+        let (lib_dirs, libs) = scan_library_artifacts(Path::new("/nonexistent"));
+        assert!(lib_dirs.is_empty());
+        assert!(libs.is_empty());
+    }
+
+    #[test]
+    fn fetch_path_dep_missing_dir() {
+        let mut ctx = BuildContext {
+            project_root: PathBuf::from("/tmp"),
+            profile_name: "debug".to_string(),
+            release: false,
+            jobs: None,
+            verbose: 0,
+            building: HashSet::new(),
+        };
+        let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("does not exist"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_path_dep_missing_manifest() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = BuildContext {
+            project_root: tmp.path().to_path_buf(),
+            profile_name: "debug".to_string(),
+            release: false,
+            jobs: None,
+            verbose: 0,
+            building: HashSet::new(),
+        };
+        let result = fetch_path_dep("mylib", tmp.path(), &mut ctx);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("no Ordo.toml"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_path_dep_circular_dependency() {
+        let tmp = TempDir::new().unwrap();
+        let dep_dir = tmp.path().join("mylib");
+        fs::create_dir_all(&dep_dir).unwrap();
+        fs::write(
+            dep_dir.join("Ordo.toml"),
+            r#"[package]
+name = "mylib"
+version = "0.1.0"
+type = "static-library"
+"#,
+        )
+        .unwrap();
+
+        let canonical = fs::canonicalize(&dep_dir).unwrap();
+        let mut ctx = BuildContext {
+            project_root: tmp.path().to_path_buf(),
+            profile_name: "debug".to_string(),
+            release: false,
+            jobs: None,
+            verbose: 0,
+            building: HashSet::from([canonical]),
+        };
+        let result = fetch_path_dep("mylib", &dep_dir, &mut ctx);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("circular"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_path_dep_header_only() {
+        let tmp = TempDir::new().unwrap();
+        let dep_dir = tmp.path().join("myheader");
+        let include_dir = dep_dir.join("include");
+        fs::create_dir_all(&include_dir).unwrap();
+        fs::write(include_dir.join("myheader.h"), "// header").unwrap();
+        fs::write(
+            dep_dir.join("Ordo.toml"),
+            r#"[package]
+name = "myheader"
+version = "0.1.0"
+type = "static-library"
+"#,
+        )
+        .unwrap();
+
+        let mut ctx = BuildContext {
+            project_root: tmp.path().to_path_buf(),
+            profile_name: "debug".to_string(),
+            release: false,
+            jobs: None,
+            verbose: 0,
+            building: HashSet::new(),
+        };
+        let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx).unwrap();
+        assert_eq!(dep.name, "myheader");
+        assert_eq!(dep.include_dirs.len(), 1);
+        assert!(dep.include_dirs[0].ends_with("include"));
+        assert!(dep.lib_dirs.is_empty());
+        assert!(dep.libs.is_empty());
+    }
+}

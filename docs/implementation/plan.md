@@ -11,7 +11,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 0/3 | Lua scripting for git deps, sandbox, caching |
-| M3 | Workspace & Profiles | TASK-015 ~ 019 | 0/5 | Workspace support, full profile options, features |
+| M3 | Workspace & Profiles | TASK-015 ~ 019 | 2/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
 | M6 | Packaging & Ecosystem | TASK-030 ~ 036 | 0/7 | Install, package, registry, IDE generation, CI, doctor, self update |
@@ -54,8 +54,8 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 
 | Task | Title | Status | Size |
 |------|-------|--------|------|
-| TASK-015 | Workspace Discovery and Configuration | Todo | L |
-| TASK-016 | Workspace Build Integration | Todo | L |
+| TASK-015 | Workspace Discovery and Configuration | Done | L |
+| TASK-016 | Workspace Build Integration | Done | L |
 | TASK-017 | Full Build Profile Support | Todo | M |
 | TASK-018 | Feature Flags | Todo | M |
 | TASK-019 | Dev Dependencies | Todo | S |

@@ -20,9 +20,13 @@ pub fn resolve_dependencies(manifest: &Manifest) -> Result<Vec<ResolvedPackage>>
         return Ok(Vec::new());
     }
 
+    let pkg = manifest.package.as_ref().ok_or_else(|| {
+        miette::miette!("cannot resolve dependencies without a [package] section")
+    })?;
+
     let mut provider = OfflineDependencyProvider::<String, SemverRanges>::new();
-    let root_name = format!("{}@root", manifest.package.name);
-    let root_version = parse_version(&manifest.package.version)?;
+    let root_name = format!("{}@root", pkg.name);
+    let root_version = parse_version(&pkg.version)?;
 
     let mut root_deps: Vec<(String, SemverRanges)> = Vec::new();
     let mut source_map: BTreeMap<String, DependencySource> = BTreeMap::new();

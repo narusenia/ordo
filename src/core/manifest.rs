@@ -9,7 +9,8 @@ use thiserror::Error;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Manifest {
-    pub package: Package,
+    pub package: Option<Package>,
+    pub workspace: Option<WorkspaceConfig>,
     #[serde(default)]
     pub language: Language,
     #[serde(default)]
@@ -18,6 +19,16 @@ pub struct Manifest {
     pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
     #[serde(default)]
     pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
+pub struct WorkspaceConfig {
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    #[serde(default)]
+    pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -301,6 +312,20 @@ pub enum ManifestError {
 }
 
 impl Manifest {
+    pub fn package(&self) -> &Package {
+        self.package
+            .as_ref()
+            .expect("called package() on workspace-only manifest")
+    }
+
+    pub fn is_workspace(&self) -> bool {
+        self.workspace.is_some()
+    }
+
+    pub fn is_virtual_workspace(&self) -> bool {
+        self.workspace.is_some() && self.package.is_none()
+    }
+
     pub fn load(path: &Path) -> Result<Self, ManifestError> {
         let content = std::fs::read_to_string(path)?;
         Self::parse(&content, path)
@@ -323,14 +348,34 @@ impl Manifest {
     }
 
     fn validate(&self) -> Result<(), ManifestError> {
-        if self.package.name.is_empty() {
+        if self.package.is_none() && self.workspace.is_none() {
             return Err(ManifestError::ValidationError {
-                message: "package name must not be empty".to_string(),
-                help: Some("set [package] name to a valid identifier".to_string()),
+                message: "Ordo.toml must contain [package] or [workspace] (or both)".to_string(),
+                help: Some("add a [package] or [workspace] section".to_string()),
             });
         }
 
-        Self::validate_semver(&self.package.version)?;
+        if let Some(ref pkg) = self.package {
+            if pkg.name.is_empty() {
+                return Err(ManifestError::ValidationError {
+                    message: "package name must not be empty".to_string(),
+                    help: Some("set [package] name to a valid identifier".to_string()),
+                });
+            }
+            Self::validate_semver(&pkg.version)?;
+        }
+
+        if let Some(ref ws) = self.workspace
+            && ws.members.is_empty()
+        {
+            return Err(ManifestError::ValidationError {
+                message: "workspace must have at least one member".to_string(),
+                help: Some(
+                    "add member paths to [workspace] members = [\"libs/*\", \"apps/*\"]"
+                        .to_string(),
+                ),
+            });
+        }
 
         Ok(())
     }
@@ -374,9 +419,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(m.package.name, "myapp");
-        assert_eq!(m.package.version, "0.1.0");
-        assert_eq!(m.package.package_type, PackageType::Executable);
+        assert_eq!(m.package().name, "myapp");
+        assert_eq!(m.package().version, "0.1.0");
+        assert_eq!(m.package().package_type, PackageType::Executable);
         assert_eq!(m.language.cpp, None);
         assert!(m.toolchain.compiler.is_none());
     }
@@ -405,9 +450,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(m.package.package_type, PackageType::StaticLibrary);
-        assert_eq!(m.package.license.as_deref(), Some("MIT"));
-        assert_eq!(m.package.authors.len(), 2);
+        assert_eq!(m.package().package_type, PackageType::StaticLibrary);
+        assert_eq!(m.package().license.as_deref(), Some("MIT"));
+        assert_eq!(m.package().authors.len(), 2);
         assert_eq!(m.language.c, Some(CStandard::C23));
         assert_eq!(m.language.cpp, Some(CppStandard::Cpp23));
         assert_eq!(m.toolchain.compiler, Some(CompilerKind::Clang));
@@ -425,7 +470,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        assert_eq!(m.package.package_type, PackageType::SharedLibrary);
+        assert_eq!(m.package().package_type, PackageType::SharedLibrary);
     }
 
     #[test]
@@ -461,9 +506,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_package_section() {
+    fn missing_package_and_workspace() {
         let err = parse("").unwrap_err();
-        assert!(matches!(err, ManifestError::ParseError { .. }));
+        assert!(matches!(err, ManifestError::ValidationError { .. }));
+        let msg = err.to_string();
+        assert!(msg.contains("[package] or [workspace]"), "got: {msg}");
     }
 
     #[test]
@@ -902,5 +949,98 @@ mod tests {
 
         assert!(m.dependencies.is_empty());
         assert!(m.dev_dependencies.is_empty());
+    }
+
+    // --- Workspace parsing tests ---
+
+    #[test]
+    fn workspace_only() {
+        let m = parse(
+            r#"
+            [workspace]
+            members = ["libs/*", "apps/*"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(m.package.is_none());
+        assert!(m.is_workspace());
+        assert!(m.is_virtual_workspace());
+        let ws = m.workspace.as_ref().unwrap();
+        assert_eq!(ws.members, vec!["libs/*", "apps/*"]);
+        assert!(ws.exclude.is_empty());
+    }
+
+    #[test]
+    fn workspace_with_exclude() {
+        let m = parse(
+            r#"
+            [workspace]
+            members = ["libs/*"]
+            exclude = ["libs/experimental"]
+            "#,
+        )
+        .unwrap();
+
+        let ws = m.workspace.as_ref().unwrap();
+        assert_eq!(ws.exclude, vec!["libs/experimental"]);
+    }
+
+    #[test]
+    fn workspace_with_package() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [workspace]
+            members = ["libs/*"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(m.package.is_some());
+        assert!(m.is_workspace());
+        assert!(!m.is_virtual_workspace());
+        assert_eq!(m.package().name, "myapp");
+    }
+
+    #[test]
+    fn workspace_shared_dependencies() {
+        let m = parse(
+            r#"
+            [workspace]
+            members = ["apps/*"]
+
+            [workspace.dependencies]
+            fmt = "11"
+            spdlog = { version = "1.14", provider = "vcpkg" }
+            "#,
+        )
+        .unwrap();
+
+        let ws = m.workspace.as_ref().unwrap();
+        assert_eq!(ws.dependencies.len(), 2);
+        assert_eq!(ws.dependencies["fmt"].version.as_deref(), Some("11"));
+        assert_eq!(
+            ws.dependencies["spdlog"].provider,
+            Some(ProviderKind::Vcpkg)
+        );
+    }
+
+    #[test]
+    fn workspace_empty_members_invalid() {
+        let err = parse(
+            r#"
+            [workspace]
+            members = []
+            "#,
+        )
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("at least one member"), "got: {msg}");
     }
 }

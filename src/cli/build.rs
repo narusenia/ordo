@@ -11,6 +11,7 @@ use crate::core::manifest::{
     CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
 use crate::core::resolver::resolve_dependencies;
+use crate::core::workspace::Workspace;
 use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
@@ -30,6 +31,7 @@ pub struct BuildOptions {
     pub locked: bool,
     pub frozen: bool,
     pub verbose: u8,
+    pub package: Option<String>,
 }
 
 pub struct BuildResult {
@@ -54,6 +56,17 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     let canonical = fs::canonicalize(&project_root).into_diagnostic()?;
     let profile_name = resolve_profile_name(opts);
 
+    let manifest_path = project_root.join("Ordo.toml");
+    if !manifest_path.exists() {
+        bail!("Ordo.toml not found in {}", project_root.display());
+    }
+
+    let manifest = Manifest::load(&manifest_path)?;
+
+    if manifest.is_workspace() {
+        return run_workspace_build(opts, &project_root, &profile_name);
+    }
+
     let mut ctx = BuildContext {
         project_root,
         profile_name,
@@ -69,6 +82,84 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     build_project(&mut ctx)
 }
 
+fn run_workspace_build(
+    opts: &BuildOptions,
+    root_dir: &Path,
+    profile_name: &str,
+) -> Result<BuildResult> {
+    let ws = Workspace::load(root_dir)?;
+    let dag = ws.build_dag()?;
+
+    let members_to_build: Vec<String> = if let Some(ref target) = opts.package {
+        if ws.find_member(target).is_none() {
+            let available = ws.member_names().join(", ");
+            bail!(
+                "package '{}' not found in workspace; available members: {}",
+                target,
+                available
+            );
+        }
+        dag.subset_order(target)
+    } else {
+        if ws.root_manifest.is_virtual_workspace() {
+            dag.order.clone()
+        } else {
+            let mut order = dag.order.clone();
+            order.push("__root__".to_string());
+            order
+        }
+    };
+
+    let ws_target_dir = root_dir.join("target");
+    fs::create_dir_all(&ws_target_dir).into_diagnostic()?;
+
+    let mut last_result = None;
+
+    for member_name in &members_to_build {
+        if member_name == "__root__" {
+            let canonical = fs::canonicalize(root_dir).into_diagnostic()?;
+            let mut ctx = BuildContext {
+                project_root: root_dir.to_path_buf(),
+                profile_name: profile_name.to_string(),
+                release: opts.release,
+                jobs: opts.jobs,
+                verbose: opts.verbose,
+                no_cache: opts.no_cache,
+                locked: opts.locked,
+                frozen: opts.frozen,
+                building: HashSet::from([canonical]),
+            };
+            last_result = Some(build_project(&mut ctx)?);
+            continue;
+        }
+
+        let member = ws.find_member(member_name).unwrap();
+        let member_dir = &member.dir;
+        let canonical = fs::canonicalize(member_dir).into_diagnostic()?;
+
+        style::success(
+            "Building",
+            &format!("{} ({})", member_name, member_dir.display()),
+        );
+
+        let mut ctx = BuildContext {
+            project_root: member_dir.clone(),
+            profile_name: profile_name.to_string(),
+            release: opts.release,
+            jobs: opts.jobs,
+            verbose: opts.verbose,
+            no_cache: opts.no_cache,
+            locked: opts.locked,
+            frozen: opts.frozen,
+            building: HashSet::from([canonical]),
+        };
+
+        last_result = Some(build_project(&mut ctx)?);
+    }
+
+    last_result.ok_or_else(|| miette::miette!("no members to build"))
+}
+
 fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     let manifest_path = ctx.project_root.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -76,6 +167,13 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     }
 
     let manifest = Manifest::load(&manifest_path)?;
+
+    if manifest.package.is_none() {
+        bail!(
+            "cannot build '{}': no [package] section (workspace-only root?)",
+            ctx.project_root.display()
+        );
+    }
     let build_dir = ctx
         .project_root
         .join(format!("target/{}/build", ctx.profile_name));
@@ -107,8 +205,8 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         sources,
         build_dir.clone(),
         ctx.project_root.clone(),
-        manifest.package.name.clone(),
-        manifest.package.package_type,
+        manifest.package().name.clone(),
+        manifest.package().package_type,
         compile_flags,
         link_flags,
     );
@@ -128,8 +226,8 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
 
     let output_path = resolve_output_path(
         &output_dir,
-        &manifest.package.name,
-        manifest.package.package_type,
+        &manifest.package().name,
+        manifest.package().package_type,
     );
 
     let profile_desc = if ctx.profile_name == "release" {
@@ -149,7 +247,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
 
     Ok(BuildResult {
         output_path,
-        package_type: manifest.package.package_type,
+        package_type: manifest.package().package_type,
     })
 }
 

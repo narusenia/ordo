@@ -16,7 +16,12 @@ pub fn run(dir: &Path) -> Result<()> {
 
     let manifest = Manifest::load(&manifest_path)?;
 
-    eprintln!("{} v{}", manifest.package.name, manifest.package.version);
+    if manifest.is_workspace() {
+        return run_workspace_tree(dir, &manifest);
+    }
+
+    let pkg = manifest.package();
+    eprintln!("{} v{}", pkg.name, pkg.version);
 
     if manifest.dependencies.is_empty() {
         style::meta("no dependencies");
@@ -63,6 +68,52 @@ pub fn run(dir: &Path) -> Result<()> {
                     .map(|p| p.display().to_string())
                     .collect();
                 style::tree_detail(cont, &format!("include: {}", dirs.join(", ")));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_workspace_tree(dir: &Path, manifest: &Manifest) -> Result<()> {
+    use crate::core::workspace::Workspace;
+
+    let ws = Workspace::load(dir)?;
+    let dag = ws.build_dag()?;
+
+    if let Some(ref pkg) = manifest.package {
+        eprintln!("{} v{} (workspace)", pkg.name, pkg.version);
+    } else {
+        eprintln!("(workspace)");
+    }
+
+    let members = &dag.order;
+    let last_idx = members.len().saturating_sub(1);
+
+    for (i, name) in members.iter().enumerate() {
+        let is_last = i == last_idx;
+        let prefix = if is_last { "└── " } else { "├── " };
+        let cont = if is_last { "    " } else { "│   " };
+
+        let member = ws.find_member(name).unwrap();
+        let pkg = member.manifest.package();
+        eprintln!("{prefix}{} v{}", pkg.name, pkg.version);
+
+        let deps: Vec<String> = dag.deps_of(name).to_vec();
+        if !deps.is_empty() {
+            style::tree_detail(cont, &format!("deps: {}", deps.join(", ")));
+        }
+
+        if !member.manifest.dependencies.is_empty() {
+            let ext_deps: Vec<&str> = member
+                .manifest
+                .dependencies
+                .iter()
+                .filter(|(_, spec)| spec.source_kind() != DependencySource::Path)
+                .map(|(n, _)| n.as_str())
+                .collect();
+            if !ext_deps.is_empty() {
+                style::tree_detail(cont, &format!("ext: {}", ext_deps.join(", ")));
             }
         }
     }

@@ -107,6 +107,10 @@ pub enum Command {
         /// Disallow network access
         #[arg(long)]
         frozen: bool,
+
+        /// Build a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Build and run the project
@@ -139,6 +143,10 @@ pub enum Command {
         /// Also clear external build cache
         #[arg(long)]
         cache: bool,
+
+        /// Clean a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Format source code
@@ -186,7 +194,11 @@ pub enum Command {
     },
 
     /// Show dependency tree
-    Tree,
+    Tree {
+        /// Show tree for a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
+    },
 
     /// Install the project to system
     Install {

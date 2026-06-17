@@ -48,6 +48,7 @@ fn main() -> Result<()> {
             no_cache,
             locked,
             frozen,
+            package,
             ..
         } => {
             let opts = cli::build::BuildOptions {
@@ -59,6 +60,7 @@ fn main() -> Result<()> {
                 locked,
                 frozen,
                 verbose: cli.verbose,
+                package,
             };
             cli::build::run(&opts)?;
         }
@@ -71,7 +73,7 @@ fn main() -> Result<()> {
         Command::Check => {
             eprintln!("ordo check: not yet implemented");
         }
-        Command::Clean { cache } => {
+        Command::Clean { cache, .. } => {
             cli::clean::run(cache)?;
         }
         Command::Fmt { .. } => {
@@ -94,7 +96,7 @@ fn main() -> Result<()> {
             let cwd = std::env::current_dir().into_diagnostic()?;
             cli::update::run(&cwd, name.as_deref())?;
         }
-        Command::Tree => {
+        Command::Tree { .. } => {
             let cwd = std::env::current_dir().into_diagnostic()?;
             cli::tree::run(&cwd)?;
         }

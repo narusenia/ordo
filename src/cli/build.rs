@@ -6,9 +6,11 @@ use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use crate::backend::provider::{FetchedDep, Provider, ResolvedDep};
+use crate::core::lockfile::LockFile;
 use crate::core::manifest::{
     CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
+use crate::core::resolver::resolve_dependencies;
 use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
@@ -25,6 +27,8 @@ pub struct BuildOptions {
     pub jobs: Option<u32>,
     pub target: Option<String>,
     pub no_cache: bool,
+    pub locked: bool,
+    pub frozen: bool,
     pub verbose: u8,
 }
 
@@ -39,6 +43,9 @@ pub struct BuildContext {
     pub release: bool,
     pub jobs: Option<u32>,
     pub verbose: u8,
+    pub no_cache: bool,
+    pub locked: bool,
+    pub frozen: bool,
     pub building: HashSet<PathBuf>,
 }
 
@@ -53,6 +60,9 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
         release: opts.release,
         jobs: opts.jobs,
         verbose: opts.verbose,
+        no_cache: opts.no_cache,
+        locked: opts.locked,
+        frozen: opts.frozen,
         building: HashSet::from([canonical]),
     };
 
@@ -88,7 +98,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         bail!("no source files found in {}", src_dir.display());
     }
 
-    let fetched_deps = fetch_dependencies(&manifest, ctx)?;
+    let fetched_deps = resolve_and_fetch(&manifest, ctx)?;
     let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
     let link_flags = build_link_flags(&fetched_deps);
 
@@ -157,6 +167,69 @@ fn auto_detect_compiler() -> CompilerKind {
     compiler::detect_compiler()
         .map(|c| c.kind)
         .unwrap_or(CompilerKind::Clang)
+}
+
+const DEP_CACHE_FILE: &str = ".dep-cache.json";
+
+fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<FetchedDep>> {
+    if manifest.dependencies.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let lock_path = ctx.project_root.join("Ordo.lock");
+    let cache_path = ctx.project_root.join("target").join(DEP_CACHE_FILE);
+
+    let resolved = resolve_dependencies(manifest)?;
+
+    let existing_lock = LockFile::load(&lock_path).ok();
+    let is_fresh = existing_lock
+        .as_ref()
+        .is_some_and(|lock| lock.is_fresh(&resolved));
+
+    if ctx.locked && !is_fresh {
+        bail!(
+            "Ordo.lock is out of date; run `ordo update` to regenerate it, \
+             or remove --locked to allow automatic updates"
+        );
+    }
+
+    if is_fresh && !ctx.no_cache {
+        if let Ok(cached) = load_dep_cache(&cache_path) {
+            return Ok(cached);
+        }
+        if ctx.frozen {
+            bail!(
+                "dependency cache missing and --frozen disallows network access; \
+                 run `ordo build` without --frozen first"
+            );
+        }
+    } else if ctx.frozen {
+        bail!(
+            "Ordo.lock is out of date and --frozen disallows network access; \
+             run `ordo update` and `ordo build` without --frozen first"
+        );
+    }
+
+    let fetched = fetch_dependencies(manifest, ctx)?;
+
+    let new_lock = LockFile::new(&resolved);
+    new_lock.save(&lock_path)?;
+    save_dep_cache(&cache_path, &fetched)?;
+
+    Ok(fetched)
+}
+
+fn load_dep_cache(path: &Path) -> Result<Vec<FetchedDep>> {
+    let content = fs::read_to_string(path).into_diagnostic()?;
+    serde_json::from_str(&content).into_diagnostic()
+}
+
+fn save_dep_cache(path: &Path, deps: &[FetchedDep]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).into_diagnostic()?;
+    }
+    let content = serde_json::to_string_pretty(deps).into_diagnostic()?;
+    fs::write(path, content).into_diagnostic()
 }
 
 fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<FetchedDep>> {
@@ -707,6 +780,9 @@ mod tests {
             release: false,
             jobs: None,
             verbose: 0,
+            no_cache: false,
+            locked: false,
+            frozen: false,
             building: HashSet::new(),
         };
         let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx);
@@ -724,6 +800,9 @@ mod tests {
             release: false,
             jobs: None,
             verbose: 0,
+            no_cache: false,
+            locked: false,
+            frozen: false,
             building: HashSet::new(),
         };
         let result = fetch_path_dep("mylib", tmp.path(), &mut ctx);
@@ -754,6 +833,9 @@ type = "static-library"
             release: false,
             jobs: None,
             verbose: 0,
+            no_cache: false,
+            locked: false,
+            frozen: false,
             building: HashSet::from([canonical]),
         };
         let result = fetch_path_dep("mylib", &dep_dir, &mut ctx);
@@ -785,6 +867,9 @@ type = "static-library"
             release: false,
             jobs: None,
             verbose: 0,
+            no_cache: false,
+            locked: false,
+            frozen: false,
             building: HashSet::new(),
         };
         let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx).unwrap();
@@ -793,5 +878,41 @@ type = "static-library"
         assert!(dep.include_dirs[0].ends_with("include"));
         assert!(dep.lib_dirs.is_empty());
         assert!(dep.libs.is_empty());
+    }
+
+    #[test]
+    fn dep_cache_round_trip() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("target/.dep-cache.json");
+
+        let deps = vec![
+            FetchedDep {
+                name: "fmt".to_string(),
+                include_dirs: vec![PathBuf::from("/usr/include/fmt")],
+                lib_dirs: vec![PathBuf::from("/usr/lib")],
+                libs: vec!["fmt".to_string()],
+                frameworks: Vec::new(),
+            },
+            FetchedDep {
+                name: "zlib".to_string(),
+                include_dirs: Vec::new(),
+                lib_dirs: Vec::new(),
+                libs: vec!["z".to_string()],
+                frameworks: Vec::new(),
+            },
+        ];
+
+        save_dep_cache(&cache_path, &deps).unwrap();
+        let loaded = load_dep_cache(&cache_path).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].name, "fmt");
+        assert_eq!(loaded[0].libs, vec!["fmt"]);
+        assert_eq!(loaded[1].name, "zlib");
+    }
+
+    #[test]
+    fn dep_cache_missing_returns_error() {
+        let result = load_dep_cache(Path::new("/nonexistent/.dep-cache.json"));
+        assert!(result.is_err());
     }
 }

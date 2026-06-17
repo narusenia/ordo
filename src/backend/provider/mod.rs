@@ -7,6 +7,7 @@ pub mod system;
 pub mod vcpkg;
 
 use miette::{IntoDiagnostic, Result};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -17,7 +18,7 @@ pub struct ResolvedDep {
     pub source: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchedDep {
     pub name: String,
     pub include_dirs: Vec<PathBuf>,

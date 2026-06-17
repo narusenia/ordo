@@ -32,6 +32,14 @@ pub struct LuaRunner;
 
 impl LuaRunner {
     pub fn execute(script_path: &Path, ctx: &LuaContext) -> Result<LuaBuildResult> {
+        Self::execute_with_progress(script_path, ctx, &|_| {})
+    }
+
+    pub fn execute_with_progress(
+        script_path: &Path,
+        ctx: &LuaContext,
+        on_progress: &dyn Fn(&str),
+    ) -> Result<LuaBuildResult> {
         let script_content = std::fs::read_to_string(script_path).map_err(|e| {
             miette::miette!(
                 "failed to read Lua script '{}': {}",
@@ -46,7 +54,7 @@ impl LuaRunner {
         Self::inject_context(&lua, ctx)?;
 
         let sandbox = Arc::new(SandboxScope::new(ctx.src_dir.clone(), ctx.out_dir.clone()));
-        Self::register_exec(&lua, &ctx.src_dir)?;
+        Self::register_exec(&lua, &ctx.src_dir, on_progress)?;
         Self::register_file_helpers(&lua, sandbox)?;
 
         let result: LuaValue = lua
@@ -111,8 +119,15 @@ impl LuaRunner {
         Ok(())
     }
 
-    fn register_exec(lua: &Lua, src_dir: &Path) -> Result<()> {
+    fn register_exec(lua: &Lua, src_dir: &Path, on_progress: &dyn Fn(&str)) -> Result<()> {
         let src_dir = src_dir.to_path_buf();
+        // SAFETY: on_progress outlives the Lua instance and all registered closures.
+        // The Lua VM is created and dropped within execute_with_progress, which holds
+        // the on_progress reference for its entire duration.
+        let raw: *const dyn Fn(&str) = on_progress;
+        let cb = Arc::new(FnPtr(unsafe {
+            std::mem::transmute::<*const dyn Fn(&str), *const (dyn Fn(&str) + 'static)>(raw)
+        }));
         let exec_fn = lua
             .create_function(
                 move |_, (command, args, opts): (String, Option<LuaTable>, Option<LuaTable>)| {
@@ -127,6 +142,13 @@ impl LuaRunner {
                         .as_ref()
                         .and_then(|o| o.get::<bool>("ignore_errors").ok())
                         .unwrap_or(false);
+
+                    let cmd_display = if cmd_args.is_empty() {
+                        command.clone()
+                    } else {
+                        format!("{} {}", command, cmd_args.join(" "))
+                    };
+                    cb.call(&cmd_display);
 
                     let output = std::process::Command::new(&command)
                         .args(&cmd_args)
@@ -229,6 +251,16 @@ impl LuaRunner {
         globals.set("glob", glob_fn).into_diagnostic()?;
 
         Ok(())
+    }
+}
+
+struct FnPtr(*const dyn Fn(&str));
+unsafe impl Send for FnPtr {}
+unsafe impl Sync for FnPtr {}
+
+impl FnPtr {
+    fn call(&self, s: &str) {
+        unsafe { (*self.0)(s) }
     }
 }
 

@@ -285,8 +285,6 @@ impl GitProvider {
                 );
             }
 
-            on_progress("Running build script…");
-
             let out_dir = self.git_cache_dir().join("git-builds").join(format!(
                 "{}-{}",
                 url_to_slug(&spec.url),
@@ -295,7 +293,7 @@ impl GitProvider {
             std::fs::create_dir_all(&out_dir).into_diagnostic()?;
 
             let ctx = build_lua_context(&checkout_dir, &out_dir);
-            let result = LuaRunner::execute(&abs_script, &ctx)?;
+            let result = LuaRunner::execute_with_progress(&abs_script, &ctx, on_progress)?;
 
             return Ok(FetchedDep {
                 name: name.to_string(),

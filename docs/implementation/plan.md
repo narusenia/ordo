@@ -10,7 +10,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 |-----------|-------|-------|----------|-----------------|
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
-| M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 0/3 | Lua scripting for git deps, sandbox, caching |
+| M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 3/3 | Lua scripting for git deps, sandbox, caching |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 2/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -46,9 +46,9 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 
 | Task | Title | Status | Size |
 |------|-------|--------|------|
-| TASK-037 | Lua Runtime Integration and Sandbox | Todo | L |
-| TASK-038 | Lua Script API (exec, file helpers, context) | Todo | M |
-| TASK-039 | Git Provider Lua Integration and Caching | Todo | M |
+| TASK-037 | Lua Runtime Integration and Sandbox | Done | L |
+| TASK-038 | Lua Script API (exec, file helpers, context) | Done | M |
+| TASK-039 | Git Provider Lua Integration and Caching | Done | M |
 
 ### M3: Workspace & Profiles
 

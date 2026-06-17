@@ -62,15 +62,16 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
 fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     let manifest_path = ctx.project_root.join("Ordo.toml");
     if !manifest_path.exists() {
-        bail!(
-            "Ordo.toml not found in {}",
-            ctx.project_root.display()
-        );
+        bail!("Ordo.toml not found in {}", ctx.project_root.display());
     }
 
     let manifest = Manifest::load(&manifest_path)?;
-    let build_dir = ctx.project_root.join(format!("target/{}/build", ctx.profile_name));
-    let output_dir = ctx.project_root.join(format!("target/{}", ctx.profile_name));
+    let build_dir = ctx
+        .project_root
+        .join(format!("target/{}/build", ctx.profile_name));
+    let output_dir = ctx
+        .project_root
+        .join(format!("target/{}", ctx.profile_name));
 
     fs::create_dir_all(&build_dir).into_diagnostic()?;
     fs::create_dir_all(&output_dir).into_diagnostic()?;
@@ -342,11 +343,7 @@ fn build_compile_flags(
     }
 }
 
-fn fetch_path_dep(
-    name: &str,
-    dep_dir: &Path,
-    ctx: &mut BuildContext,
-) -> Result<FetchedDep> {
+fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<FetchedDep> {
     if !dep_dir.exists() {
         bail!(
             "path dependency '{}' points to '{}' which does not exist",

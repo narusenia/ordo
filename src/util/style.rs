@@ -66,6 +66,15 @@ pub fn run_icon(verb: &str, message: &str) {
     );
 }
 
+pub fn header(message: &str) {
+    eprintln!();
+    eprintln!(
+        "{} {}",
+        CYAN_BOLD.apply_to("▸"),
+        CYAN_BOLD.apply_to(message)
+    );
+}
+
 pub fn meta(message: &str) {
     eprintln!("  {}", DIM.apply_to(message));
 }

@@ -142,10 +142,7 @@ fn run_workspace_build(
         let member_dir = &member.dir;
         let canonical = fs::canonicalize(member_dir).into_diagnostic()?;
 
-        style::success(
-            "Building",
-            &format!("{} ({})", member_name, member_dir.display()),
-        );
+        style::header(member_name);
 
         let mut ctx = BuildContext {
             project_root: member_dir.clone(),

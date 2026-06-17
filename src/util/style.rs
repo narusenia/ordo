@@ -74,6 +74,10 @@ pub fn tree_line(line: &str) {
     eprintln!("  {}", DIM.apply_to(line));
 }
 
+pub fn tree_detail(prefix: &str, detail: &str) {
+    eprintln!("{prefix}{}", DIM.apply_to(detail));
+}
+
 pub fn verbose_cmd(cmd: &str) {
     eprintln!("  {}", DIM.apply_to(format!("$ {cmd}")));
 }

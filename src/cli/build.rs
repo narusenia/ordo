@@ -319,17 +319,30 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 }
             }
             DependencySource::Provider(ProviderKind::Vcpkg) => {
-                // Already installed in pass 1, just fetch
+                let spinner = style::create_spinner(&format!("Resolving {name} (vcpkg)…"));
                 let provider = VcpkgProvider::new();
                 let root = provider.vcpkg_root()?;
                 let triplet = VcpkgProvider::host_triplet();
                 let version = provider.query_version(&root, name, triplet);
-                style::success("Resolved", &format!("{name} v{version} (vcpkg)"));
-                provider.fetch(&ResolvedDep {
+                let resolved = ResolvedDep {
                     name: name.to_string(),
-                    version,
+                    version: version.clone(),
                     source: "vcpkg".to_string(),
-                })?
+                };
+                match provider.fetch(&resolved) {
+                    Ok(dep) => {
+                        style::finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{version} (vcpkg)"),
+                        );
+                        dep
+                    }
+                    Err(e) => {
+                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (vcpkg)"));
+                        return Err(e);
+                    }
+                }
             }
             DependencySource::Provider(ProviderKind::Conan) => {
                 let sw = style::create_spinner_with_detail(&format!("Resolving {name} (conan)…"));

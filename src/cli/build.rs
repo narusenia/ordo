@@ -11,6 +11,7 @@ use crate::core::manifest::{
 };
 use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -32,16 +33,44 @@ pub struct BuildResult {
     pub package_type: PackageType,
 }
 
+pub struct BuildContext {
+    pub project_root: PathBuf,
+    pub profile_name: String,
+    pub release: bool,
+    pub jobs: Option<u32>,
+    pub verbose: u8,
+    pub building: HashSet<PathBuf>,
+}
+
 pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
-    let manifest_path = Path::new("Ordo.toml");
+    let project_root = std::env::current_dir().into_diagnostic()?;
+    let canonical = fs::canonicalize(&project_root).into_diagnostic()?;
+    let profile_name = resolve_profile_name(opts);
+
+    let mut ctx = BuildContext {
+        project_root,
+        profile_name,
+        release: opts.release,
+        jobs: opts.jobs,
+        verbose: opts.verbose,
+        building: HashSet::from([canonical]),
+    };
+
+    build_project(&mut ctx)
+}
+
+fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
+    let manifest_path = ctx.project_root.join("Ordo.toml");
     if !manifest_path.exists() {
-        bail!("Ordo.toml not found in current directory");
+        bail!(
+            "Ordo.toml not found in {}",
+            ctx.project_root.display()
+        );
     }
 
-    let manifest = Manifest::load(manifest_path)?;
-    let profile_name = resolve_profile_name(opts);
-    let build_dir = PathBuf::from(format!("target/{profile_name}/build"));
-    let output_dir = PathBuf::from(format!("target/{profile_name}"));
+    let manifest = Manifest::load(&manifest_path)?;
+    let build_dir = ctx.project_root.join(format!("target/{}/build", ctx.profile_name));
+    let output_dir = ctx.project_root.join(format!("target/{}", ctx.profile_name));
 
     fs::create_dir_all(&build_dir).into_diagnostic()?;
     fs::create_dir_all(&output_dir).into_diagnostic()?;
@@ -52,22 +81,21 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
         .unwrap_or_else(auto_detect_compiler);
     let compiler = compiler::create_compiler(compiler_kind);
 
-    let sources = discover_sources(Path::new("src"))?;
+    let src_dir = ctx.project_root.join("src");
+    let sources = discover_sources(&src_dir)?;
     if sources.is_empty() {
-        bail!("no source files found in src/");
+        bail!("no source files found in {}", src_dir.display());
     }
 
-    let fetched_deps = fetch_dependencies(&manifest)?;
-    let compile_flags = build_compile_flags(&manifest, opts, &fetched_deps);
+    let fetched_deps = fetch_dependencies(&manifest, ctx)?;
+    let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
     let link_flags = build_link_flags(&fetched_deps);
-
-    let project_root = std::env::current_dir().into_diagnostic()?;
 
     let ninja_gen = NinjaGenerator::new(
         compiler.as_ref(),
         sources,
-        project_root.join(&build_dir),
-        project_root.clone(),
+        build_dir.clone(),
+        ctx.project_root.clone(),
         manifest.package.name.clone(),
         manifest.package.package_type,
         compile_flags,
@@ -77,10 +105,14 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     let output = ninja_gen.generate();
 
     fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
-    fs::write("compile_commands.json", &output.compile_commands).into_diagnostic()?;
+    fs::write(
+        ctx.project_root.join("compile_commands.json"),
+        &output.compile_commands,
+    )
+    .into_diagnostic()?;
 
     let start = Instant::now();
-    invoke_ninja(&build_dir, opts.jobs, opts.verbose)?;
+    invoke_ninja(&build_dir, ctx.jobs, ctx.verbose)?;
     let elapsed = start.elapsed();
 
     let output_path = resolve_output_path(
@@ -89,7 +121,7 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
         manifest.package.package_type,
     );
 
-    let profile_desc = if profile_name == "release" {
+    let profile_desc = if ctx.profile_name == "release" {
         "optimized"
     } else {
         "unoptimized + debuginfo"
@@ -97,7 +129,8 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
     style::success(
         "Finished",
         &format!(
-            "`{profile_name}` profile [{profile_desc}] in {:.2}s",
+            "`{}` profile [{profile_desc}] in {:.2}s",
+            ctx.profile_name,
             elapsed.as_secs_f64()
         ),
     );
@@ -125,7 +158,7 @@ fn auto_detect_compiler() -> CompilerKind {
         .unwrap_or(CompilerKind::Clang)
 }
 
-fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
+fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<FetchedDep>> {
     let mut fetched = Vec::new();
 
     // Pass 1: batch-install all vcpkg deps in one manifest
@@ -264,6 +297,11 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                     }
                 }
             }
+            DependencySource::Path => {
+                let rel_path = spec.path.as_ref().unwrap();
+                let dep_dir = ctx.project_root.join(rel_path);
+                fetch_path_dep(name, &dep_dir, ctx)?
+            }
             _ => continue,
         };
         fetched.push(dep);
@@ -274,13 +312,13 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
 
 fn build_compile_flags(
     manifest: &Manifest,
-    opts: &BuildOptions,
+    ctx: &BuildContext,
     deps: &[FetchedDep],
 ) -> CompileFlags {
-    let (opt_level, debug) = if opts.release { (3, false) } else { (0, true) };
+    let (opt_level, debug) = if ctx.release { (3, false) } else { (0, true) };
 
     let mut include_dirs = Vec::new();
-    let include_path = PathBuf::from("include");
+    let include_path = ctx.project_root.join("include");
     if include_path.exists() {
         include_dirs.push(include_path);
     }
@@ -302,6 +340,121 @@ fn build_compile_flags(
         defines: Vec::new(),
         include_dirs,
     }
+}
+
+fn fetch_path_dep(
+    name: &str,
+    dep_dir: &Path,
+    ctx: &mut BuildContext,
+) -> Result<FetchedDep> {
+    if !dep_dir.exists() {
+        bail!(
+            "path dependency '{}' points to '{}' which does not exist",
+            name,
+            dep_dir.display()
+        );
+    }
+
+    let dep_manifest_path = dep_dir.join("Ordo.toml");
+    if !dep_manifest_path.exists() {
+        bail!(
+            "path dependency '{}' at '{}' has no Ordo.toml",
+            name,
+            dep_dir.display()
+        );
+    }
+
+    let canonical_dep = fs::canonicalize(dep_dir).into_diagnostic()?;
+    if ctx.building.contains(&canonical_dep) {
+        bail!(
+            "circular path dependency detected: '{}' at '{}'",
+            name,
+            canonical_dep.display()
+        );
+    }
+
+    let include_dir = dep_dir.join("include");
+    let include_dirs = if include_dir.exists() {
+        vec![fs::canonicalize(&include_dir).into_diagnostic()?]
+    } else {
+        vec![fs::canonicalize(dep_dir).into_diagnostic()?]
+    };
+
+    let src_dir = dep_dir.join("src");
+    let has_sources = src_dir.exists() && !discover_sources(&src_dir)?.is_empty();
+
+    if !has_sources {
+        style::success("Resolved", &format!("{name} (path, header-only)"));
+        return Ok(FetchedDep {
+            name: name.to_string(),
+            include_dirs,
+            lib_dirs: Vec::new(),
+            libs: Vec::new(),
+            frameworks: Vec::new(),
+        });
+    }
+
+    let parent_root = ctx.project_root.clone();
+    ctx.project_root = dep_dir.to_path_buf();
+    ctx.building.insert(canonical_dep.clone());
+
+    let build_result = build_project(ctx);
+
+    ctx.project_root = parent_root;
+    ctx.building.remove(&canonical_dep);
+
+    build_result?;
+
+    let dep_output_dir = dep_dir.join(format!("target/{}", ctx.profile_name));
+    let (lib_dirs, libs) = scan_library_artifacts(&dep_output_dir);
+
+    style::success("Built", &format!("{name} (path)"));
+
+    Ok(FetchedDep {
+        name: name.to_string(),
+        include_dirs,
+        lib_dirs,
+        libs,
+        frameworks: Vec::new(),
+    })
+}
+
+fn scan_library_artifacts(output_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {
+    if !output_dir.exists() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let Ok(entries) = fs::read_dir(output_dir) else {
+        return (Vec::new(), Vec::new());
+    };
+
+    let mut libs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        match ext {
+            "a" | "so" | "dylib" | "lib" => {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let lib_name = stem.strip_prefix("lib").unwrap_or(stem);
+                    libs.push(lib_name.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    libs.sort();
+    libs.dedup();
+
+    let lib_dirs = if libs.is_empty() {
+        Vec::new()
+    } else {
+        vec![output_dir.to_path_buf()]
+    };
+
+    (lib_dirs, libs)
 }
 
 fn build_link_flags(deps: &[FetchedDep]) -> LinkFlags {

@@ -195,6 +195,10 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
 
     if is_fresh && !ctx.no_cache {
         if let Ok(cached) = load_dep_cache(&cache_path) {
+            style::success(
+                "Resolved",
+                &format!("{} dependencies (cached)", cached.len()),
+            );
             return Ok(cached);
         }
         if ctx.frozen {

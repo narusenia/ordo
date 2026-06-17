@@ -79,8 +79,12 @@ fn main() -> Result<()> {
         Command::Watch { .. } => {
             eprintln!("ordo watch: not yet implemented");
         }
-        Command::Add { spec, provider } => {
-            cli::add::run(&spec, provider.as_deref())?;
+        Command::Add {
+            spec,
+            provider,
+            no_verify,
+        } => {
+            cli::add::run(&spec, provider.as_deref(), no_verify)?;
         }
         Command::Update { name } => {
             let cwd = std::env::current_dir().into_diagnostic()?;

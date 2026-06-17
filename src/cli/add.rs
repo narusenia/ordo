@@ -65,7 +65,7 @@ fn prompt_provider() -> Result<String> {
     Ok(provider)
 }
 
-pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
+pub fn run(spec: &str, provider_flag: Option<&str>, no_verify: bool) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
     let parsed = parse_spec(spec);
 
@@ -85,7 +85,7 @@ pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
         &provider,
         &parsed.name,
         parsed.version.as_deref(),
-        true,
+        !no_verify,
     )
 }
 

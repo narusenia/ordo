@@ -65,7 +65,12 @@ fn prompt_provider() -> Result<String> {
     Ok(provider)
 }
 
-pub fn run(spec: &str, provider_flag: Option<&str>, no_verify: bool) -> Result<()> {
+pub fn run(
+    spec: &str,
+    provider_flag: Option<&str>,
+    no_verify: bool,
+    with: Option<&str>,
+) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
     let parsed = parse_spec(spec);
 
@@ -77,7 +82,11 @@ pub fn run(spec: &str, provider_flag: Option<&str>, no_verify: bool) -> Result<(
     if provider == "git" {
         let url = expand_git_shorthand(&parsed.name);
         let dep_name = git_repo_name(&parsed.name);
-        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref());
+        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref(), with);
+    }
+
+    if with.is_some() {
+        bail!("`--with` is only valid for git dependencies");
     }
 
     run_inner(
@@ -97,7 +106,13 @@ fn git_repo_name(spec: &str) -> String {
         .to_string()
 }
 
-fn run_inner_git(dir: &Path, name: &str, url: &str, tag: Option<&str>) -> Result<()> {
+fn run_inner_git(
+    dir: &Path,
+    name: &str,
+    url: &str,
+    tag: Option<&str>,
+    with: Option<&str>,
+) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
@@ -121,12 +136,16 @@ fn run_inner_git(dir: &Path, name: &str, url: &str, tag: Option<&str>) -> Result
     if let Some(t) = tag {
         table.insert("tag", t.into());
     }
+    if let Some(w) = with {
+        table.insert("with", w.into());
+    }
     deps.insert(name, Item::Value(Value::InlineTable(table)));
 
     std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
 
     let tag_str = tag.map(|t| format!(" @{t}")).unwrap_or_default();
-    style::success("Added", &format!("{name}{tag_str} (git)"));
+    let with_str = with.map(|w| format!(" with {w}")).unwrap_or_default();
+    style::success("Added", &format!("{name}{tag_str} (git){with_str}"));
 
     Ok(())
 }
@@ -403,6 +422,7 @@ type = "executable"
             "fmt",
             "https://github.com/fmtlib/fmt",
             Some("11.1.0"),
+            None,
         )
         .unwrap();
 
@@ -414,7 +434,14 @@ type = "executable"
     #[test]
     fn add_git_dep_without_tag() {
         let tmp = setup_project();
-        run_inner_git(tmp.path(), "fmt", "https://github.com/fmtlib/fmt", None).unwrap();
+        run_inner_git(
+            tmp.path(),
+            "fmt",
+            "https://github.com/fmtlib/fmt",
+            None,
+            None,
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("git = \"https://github.com/fmtlib/fmt\""));

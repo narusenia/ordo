@@ -89,8 +89,9 @@ fn main() -> Result<()> {
             spec,
             provider,
             no_verify,
+            with,
         } => {
-            cli::add::run(&spec, provider.as_deref(), no_verify)?;
+            cli::add::run(&spec, provider.as_deref(), no_verify, with.as_deref())?;
         }
         Command::Update { name } => {
             let cwd = std::env::current_dir().into_diagnostic()?;

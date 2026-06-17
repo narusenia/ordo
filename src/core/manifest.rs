@@ -174,6 +174,7 @@ pub struct DependencySpec {
     pub optional: bool,
     pub workspace: bool,
     pub features: Vec<String>,
+    pub with: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -224,6 +225,7 @@ impl<'de> Deserialize<'de> for DependencySpec {
             workspace: bool,
             #[serde(default)]
             features: Vec<String>,
+            with: Option<String>,
         }
 
         match Raw::deserialize(deserializer)? {
@@ -238,6 +240,7 @@ impl<'de> Deserialize<'de> for DependencySpec {
                 optional: false,
                 workspace: false,
                 features: Vec::new(),
+                with: None,
             }),
             Raw::Table(t) => Ok(DependencySpec {
                 version: t.version,
@@ -250,6 +253,7 @@ impl<'de> Deserialize<'de> for DependencySpec {
                 optional: t.optional,
                 workspace: t.workspace,
                 features: t.features,
+                with: t.with,
             }),
         }
     }
@@ -375,6 +379,17 @@ impl Manifest {
                         .to_string(),
                 ),
             });
+        }
+
+        for (name, spec) in &self.dependencies {
+            if spec.with.is_some() && spec.git.is_none() {
+                return Err(ManifestError::ValidationError {
+                    message: format!(
+                        "dependency '{name}': `with` is only valid on git dependencies"
+                    ),
+                    help: Some("add a `git = \"...\"` field or remove `with`".to_string()),
+                });
+            }
         }
 
         Ok(())

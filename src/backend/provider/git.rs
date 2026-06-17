@@ -1,4 +1,5 @@
 use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
+use crate::backend::lua::{LuaContext, LuaRunner};
 use crate::util::paths::OrdoPaths;
 use miette::{IntoDiagnostic, Result, bail};
 use std::path::{Path, PathBuf};
@@ -252,6 +253,17 @@ impl GitProvider {
         spec: &GitDepSpec,
         on_progress: &dyn Fn(&str),
     ) -> Result<FetchedDep> {
+        self.fetch_git_with_script(name, spec, None, None, on_progress)
+    }
+
+    pub fn fetch_git_with_script(
+        &self,
+        name: &str,
+        spec: &GitDepSpec,
+        script_path: Option<&Path>,
+        project_root: Option<&Path>,
+        on_progress: &dyn Fn(&str),
+    ) -> Result<FetchedDep> {
         let bare_path = self.clone_or_fetch(&spec.url, on_progress)?;
 
         let checkout_dir = self
@@ -261,7 +273,87 @@ impl GitProvider {
             .join(&spec.git_ref);
 
         self.checkout_to_worktree(&bare_path, &spec.git_ref, &checkout_dir)?;
+
+        if let Some(script) = script_path {
+            let root = project_root.unwrap_or(Path::new("."));
+            let abs_script = root.join(script);
+            if !abs_script.exists() {
+                bail!(
+                    "Lua build script '{}' not found (expected at '{}')",
+                    script.display(),
+                    abs_script.display()
+                );
+            }
+
+            let out_dir = self.git_cache_dir().join("git-builds").join(format!(
+                "{}-{}",
+                url_to_slug(&spec.url),
+                &spec.git_ref
+            ));
+            std::fs::create_dir_all(&out_dir).into_diagnostic()?;
+
+            let ctx = build_lua_context(&checkout_dir, &out_dir);
+            let result = LuaRunner::execute_with_progress(&abs_script, &ctx, on_progress)?;
+
+            return Ok(FetchedDep {
+                name: name.to_string(),
+                include_dirs: result.include_dirs.into_iter().map(PathBuf::from).collect(),
+                lib_dirs: result.lib_dirs.into_iter().map(PathBuf::from).collect(),
+                libs: result.libs,
+                frameworks: Vec::new(),
+            });
+        }
+
         self.scan_checkout(&checkout_dir, name)
+    }
+}
+
+fn build_lua_context(src_dir: &Path, out_dir: &Path) -> LuaContext {
+    let target_os = if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    };
+    let target_arch = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86_64"
+    };
+
+    let (cc, cxx, id) = detect_compiler_for_lua();
+
+    LuaContext {
+        src_dir: src_dir.to_path_buf(),
+        out_dir: out_dir.to_path_buf(),
+        target_os: target_os.to_string(),
+        target_arch: target_arch.to_string(),
+        profile: "release".to_string(),
+        compiler_cc: cc,
+        compiler_cxx: cxx,
+        compiler_id: id,
+    }
+}
+
+fn detect_compiler_for_lua() -> (String, String, String) {
+    use crate::backend::compiler;
+    match compiler::detect_compiler() {
+        Some(info) => {
+            let id = info.kind.to_string();
+            let cc = match info.kind {
+                crate::core::manifest::CompilerKind::Gcc => "gcc".to_string(),
+                crate::core::manifest::CompilerKind::Msvc => "cl".to_string(),
+                _ => "clang".to_string(),
+            };
+            let cxx = match info.kind {
+                crate::core::manifest::CompilerKind::Gcc => "g++".to_string(),
+                crate::core::manifest::CompilerKind::Msvc => "cl".to_string(),
+                _ => "clang++".to_string(),
+            };
+            (cc, cxx, id)
+        }
+        None => ("cc".to_string(), "c++".to_string(), "unknown".to_string()),
     }
 }
 

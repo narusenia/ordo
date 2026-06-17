@@ -478,7 +478,39 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 match provider.resolve_git(name, &git_spec, &on_progress) {
                     Ok(resolved) => {
                         sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
-                        provider.fetch_git(name, &git_spec, &on_progress)?
+                        let script = spec.with.as_ref().map(std::path::Path::new);
+                        if script.is_some() {
+                            let bw = style::create_spinner_with_detail(&format!(
+                                "Building {name} (lua)…"
+                            ));
+                            let on_lua_progress = |msg: &str| {
+                                bw.set_detail(msg);
+                            };
+                            match provider.fetch_git_with_script(
+                                name,
+                                &git_spec,
+                                script,
+                                Some(&ctx.project_root),
+                                &on_lua_progress,
+                            ) {
+                                Ok(dep) => {
+                                    bw.finish_success("Built", &format!("{name} (lua)"));
+                                    dep
+                                }
+                                Err(e) => {
+                                    bw.finish_error("Failed", &format!("{name} (lua)"));
+                                    return Err(e);
+                                }
+                            }
+                        } else {
+                            provider.fetch_git_with_script(
+                                name,
+                                &git_spec,
+                                None,
+                                None,
+                                &on_progress,
+                            )?
+                        }
                     }
                     Err(e) => {
                         sw.finish_error("Failed", &format!("{name} (git)"));

@@ -56,6 +56,9 @@ fmt = { git = "https://github.com/fmtlib/fmt", tag = "11.1.0" }
 fmt = { git = "https://...", branch = "main" }
 fmt = { git = "https://...", rev = "abc123" }
 
+# Git with Lua build script
+fmt = { git = "https://github.com/fmtlib/fmt", tag = "11.1.0", with = "scripts/fmt.lua" }
+
 # Provider
 fmt = { provider = "vcpkg" }
 fmt = { version = "11", provider = "vcpkg" }
@@ -233,6 +236,7 @@ Fields per `[[package]]`:
 - `version`: Resolved version
 - `source`: Source URI with type prefix (`registry+`, `git+`, `vcpkg`, `conan`, `pkg-config`, `system`, `path+`)
 - `checksum`: `sha256:<hex>` (omitted for path dependencies)
+- `script-hash`: `sha256:<hex>` (only for git deps with `with` — hash of the Lua script file; change triggers rebuild)
 
 ---
 

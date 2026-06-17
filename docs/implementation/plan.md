@@ -10,6 +10,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 |-----------|-------|-------|----------|-----------------|
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
+| M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 0/3 | Lua scripting for git deps, sandbox, caching |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 0/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -40,6 +41,14 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | TASK-012 | Conan Provider (Active) | Done | M |
 | TASK-013 | Git Provider | Done | L |
 | TASK-014 | Dependency CLI Commands (add, update, tree) | Done | M |
+
+### M2.5: Lua Build Scripts
+
+| Task | Title | Status | Size |
+|------|-------|--------|------|
+| TASK-037 | Lua Runtime Integration and Sandbox | Todo | L |
+| TASK-038 | Lua Script API (exec, file helpers, context) | Todo | M |
+| TASK-039 | Git Provider Lua Integration and Caching | Todo | M |
 
 ### M3: Workspace & Profiles
 
@@ -92,6 +101,9 @@ M1: Foundation + MVP
 M2: Dependency Management
   TASK-008 → TASK-009 → TASK-010 → TASK-011 → TASK-012 → TASK-013 → TASK-014
                                                              ↓
+M2.5: Lua Build Scripts
+  TASK-037 → TASK-038 → TASK-039
+                            ↓
 M3: Workspace & Profiles
   TASK-015 → TASK-016 → TASK-017 → TASK-018 → TASK-019
                                                   ↓
@@ -146,6 +158,10 @@ M6: Packaging & Ecosystem
 | TASK-035 | Todo | REQ-SEC-005, REQ-PROJ-005 (CI steps) |
 | TASK-036 | Todo | REQ-TOOL-003 |
 
+| TASK-037 | Todo | REQ-LUA-002, REQ-LUA-007 |
+| TASK-038 | Todo | REQ-LUA-003, REQ-LUA-004, REQ-LUA-005, REQ-LUA-006 |
+| TASK-039 | Todo | REQ-LUA-001, REQ-LUA-008 |
+
 ## Untraced Requirements (Future / Placeholder)
 
 | Requirement | Status |
@@ -154,3 +170,5 @@ M6: Packaging & Ecosystem
 | REQ-SEC-003 (registry security) | Addressed partially in TASK-032 |
 | REQ-SEC-004 (ordo audit) | Future — placeholder command only |
 | REQ-TEST-005 (ordo bench) | Future |
+| REQ-LUA-009 (script sharing via registry) | Future — depends on REQ-PKG-006 |
+| REQ-LUA-010 (general-purpose Lua scripts) | Future — extends REQ-PROJ-005 |

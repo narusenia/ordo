@@ -43,13 +43,15 @@
   - [ ] Planned: check `Ordo.lock` entries against a vulnerability advisory database
   - [ ] Clear message when invoked before implementation
 
-## REQ-SEC-005: No Build Scripts
+## REQ-SEC-005: No Implicit Build Scripts
 
 - **Priority**: Must
 - **Status**: Draft
-- **Description**: Ordo deliberately does not support build scripts (programmatic build logic executed during build). This eliminates a major supply chain attack vector.
+- **Description**: Ordo does not support implicit build scripts (programmatic build logic executed automatically during build). This eliminates a major supply chain attack vector. The only exception is Lua build scripts for git dependencies, which require explicit user opt-in via the `with` field (see REQ-LUA).
 - **Acceptance Criteria**:
   - [ ] No `build.rs` equivalent; no `[build-dependencies]`
   - [ ] No pre-build or post-build hooks that execute automatically
   - [ ] `[scripts]` are user-invoked only (never triggered implicitly by build)
+  - [ ] Git dependency Lua scripts execute only when explicitly declared via `with` in `Ordo.toml`
+  - [ ] Lua scripts run in a sandboxed environment (REQ-LUA-007)
   - [ ] Documented as a deliberate security decision

@@ -155,7 +155,8 @@ src/
 │   │   ├── gcc.rs
 │   │   └── msvc.rs
 │   ├── ninja.rs            # build.ninja writer
-│   └── cache.rs            # ccache/sccache integration
+│   ├── cache.rs            # ccache/sccache integration
+│   └── lua.rs              # Lua script runner (mlua sandbox)
 ├── error/
 │   ├── mod.rs              # Error types, error codes
 │   └── codes.rs            # E00xx - E04xx definitions
@@ -168,7 +169,7 @@ src/
 ## Key Design Decisions
 
 1. **Single binary**: No daemon, no background service. Each `ordo` invocation is self-contained.
-2. **No build scripts**: Deliberate omission for security. External tool integration via `[scripts]`.
+2. **No implicit build scripts**: No automatic pre/post-build hooks. Lua build scripts for git dependencies require explicit `with` declaration and run in a sandboxed Lua 5.4 runtime (mlua).
 3. **Ninja as the only build executor**: Ordo generates, Ninja executes. No custom build scheduler.
 4. **Single build.ninja for workspaces**: Maximizes Ninja's parallel scheduling efficiency.
 5. **Compiler abstraction via traits**: New compiler support = new trait impl, no changes to core logic.
@@ -203,3 +204,4 @@ All errors implement `miette::Diagnostic` for rich source-span display.
 | `dirs` | OS-native path resolution | Util |
 | `owo-colors` | Terminal color output | CLI |
 | `tracing` | Structured logging | All |
+| `mlua` | Embedded Lua 5.4 runtime (sandboxed) | Backend |

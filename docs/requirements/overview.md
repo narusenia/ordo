@@ -27,7 +27,7 @@ Ordo does not replace the C/C++ ecosystem — it orchestrates it.
 ### Out of Scope
 
 - Replacing compilers, linkers, or Ninja itself
-- Build scripts / programmatic build logic (by design)
+- Implicit build scripts / programmatic build logic (by design; explicit Lua scripts for git deps are supported)
 - Plugin system (by design; extensibility via `[scripts]` and PATH)
 - GUI / visual tooling
 - Language support beyond C and C++
@@ -47,6 +47,7 @@ Ordo does not replace the C/C++ ecosystem — it orchestrates it.
 | **Feature** | A conditional compilation flag that controls optional functionality |
 | **Ordo.lock** | A lockfile recording exact resolved dependency versions and hashes |
 | **Ordo Registry** | The self-hosted package registry for Ordo packages |
+| **Build Script** | A Lua script that builds a git dependency and returns include/library paths to Ordo |
 
 ## Requirements Summary
 
@@ -64,12 +65,13 @@ Ordo does not replace the C/C++ ecosystem — it orchestrates it.
 | IDE | REQ-IDE-001 ~ 005 | IDE & CMake Integration | 5 |
 | CLI | REQ-CLI-001 ~ 008 | CLI, UX & Configuration | 8 |
 | SEC | REQ-SEC-001 ~ 005 | Security & Supply Chain | 5 |
-| **Total** | | | **71** |
+| LUA | REQ-LUA-001 ~ 010 | Lua Build Scripts | 10 |
+| **Total** | | | **81** |
 
 ## Priority Distribution
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| Must | 38 | Core functionality required for a usable tool |
+| Must | 46 | Core functionality required for a usable tool |
 | Should | 22 | Important features expected by users |
-| Could | 11 | Valuable additions, deferrable without impact |
+| Could | 13 | Valuable additions, deferrable without impact |

@@ -55,18 +55,15 @@ impl LockFile {
     }
 
     pub fn is_fresh(&self, resolved: &[ResolvedPackage]) -> bool {
-        let current = Self::new(resolved);
-        if self.packages.len() != current.packages.len() {
-            return false;
-        }
-
         let locked: BTreeMap<&str, &LockedPackage> =
             self.packages.iter().map(|p| (p.name.as_str(), p)).collect();
 
-        for pkg in &current.packages {
+        for pkg in resolved {
+            let source_str = source_to_string(&pkg.source);
             match locked.get(pkg.name.as_str()) {
                 Some(existing) => {
-                    if existing.version != pkg.version || existing.source != pkg.source {
+                    if existing.version != pkg.version.to_string() || existing.source != source_str
+                    {
                         return false;
                     }
                 }
@@ -75,6 +72,18 @@ impl LockFile {
         }
 
         true
+    }
+
+    pub fn merge(&mut self, resolved: &[ResolvedPackage]) {
+        let new_lock = Self::new(resolved);
+        for pkg in new_lock.packages {
+            if let Some(pos) = self.packages.iter().position(|p| p.name == pkg.name) {
+                self.packages[pos] = pkg;
+            } else {
+                self.packages.push(pkg);
+            }
+        }
+        self.packages.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
     pub fn verify_checksums(&self) -> Result<()> {
@@ -180,12 +189,12 @@ mod tests {
     }
 
     #[test]
-    fn is_stale_when_dep_removed() {
+    fn is_fresh_when_subset() {
         let resolved = sample_resolved();
         let lock = LockFile::new(&resolved);
 
-        let updated = vec![sample_resolved().remove(0)];
-        assert!(!lock.is_fresh(&updated));
+        let subset = vec![sample_resolved().remove(0)];
+        assert!(lock.is_fresh(&subset));
     }
 
     #[test]

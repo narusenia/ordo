@@ -42,6 +42,7 @@ pub struct BuildResult {
 pub struct BuildContext {
     pub project_root: PathBuf,
     pub workspace_root: Option<PathBuf>,
+    pub target_dir: PathBuf,
     pub profile_name: String,
     pub release: bool,
     pub jobs: Option<u32>,
@@ -68,9 +69,11 @@ pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
         return run_workspace_build(opts, &project_root, &profile_name);
     }
 
+    let target_dir = project_root.join("target");
     let mut ctx = BuildContext {
         project_root,
         workspace_root: None,
+        target_dir,
         profile_name,
         release: opts.release,
         jobs: opts.jobs,
@@ -125,6 +128,7 @@ fn run_workspace_build(
             let mut ctx = BuildContext {
                 project_root: root_dir.to_path_buf(),
                 workspace_root: Some(ws_root.clone()),
+                target_dir: ws_target_dir.clone(),
                 profile_name: profile_name.to_string(),
                 release: opts.release,
                 jobs: opts.jobs,
@@ -147,6 +151,7 @@ fn run_workspace_build(
         let mut ctx = BuildContext {
             project_root: member_dir.clone(),
             workspace_root: Some(ws_root.clone()),
+            target_dir: ws_target_dir.clone(),
             profile_name: profile_name.to_string(),
             release: opts.release,
             jobs: opts.jobs,
@@ -183,8 +188,15 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     }
 
     let project_root = fs::canonicalize(&ctx.project_root).into_diagnostic()?;
-    let build_dir = project_root.join(format!("target/{}/build", ctx.profile_name));
-    let output_dir = project_root.join(format!("target/{}", ctx.profile_name));
+    let pkg_name = manifest.package().name.clone();
+
+    let (build_dir, output_dir) = if ctx.workspace_root.is_some() {
+        let base = ctx.target_dir.join(&ctx.profile_name).join(&pkg_name);
+        (base.join("build"), base)
+    } else {
+        let base = ctx.target_dir.join(&ctx.profile_name);
+        (base.join("build"), base)
+    };
 
     fs::create_dir_all(&build_dir).into_diagnostic()?;
     fs::create_dir_all(&output_dir).into_diagnostic()?;
@@ -279,8 +291,20 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
         return Ok(Vec::new());
     }
 
-    let lock_path = ctx.project_root.join("Ordo.lock");
-    let cache_path = ctx.project_root.join("target").join(DEP_CACHE_FILE);
+    let lock_root = ctx.workspace_root.as_deref().unwrap_or(&ctx.project_root);
+    let lock_path = lock_root.join("Ordo.lock");
+
+    let pkg_name = manifest
+        .package
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("root");
+    let cache_dir = if ctx.workspace_root.is_some() {
+        ctx.target_dir.join(&ctx.profile_name).join(pkg_name)
+    } else {
+        ctx.target_dir.clone()
+    };
+    let cache_path = cache_dir.join(DEP_CACHE_FILE);
 
     let resolved = resolve_dependencies(manifest)?;
 
@@ -319,8 +343,12 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
 
     let fetched = fetch_dependencies(manifest, ctx)?;
 
-    let new_lock = LockFile::new(&resolved);
-    new_lock.save(&lock_path)?;
+    let mut lock = LockFile::load(&lock_path).unwrap_or(LockFile {
+        version: 1,
+        packages: Vec::new(),
+    });
+    lock.merge(&resolved);
+    lock.save(&lock_path)?;
     save_dep_cache(&cache_path, &fetched)?;
 
     Ok(fetched)
@@ -671,11 +699,22 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
 
     build_result?;
 
-    let dep_output_dir = dep_dir.join(format!("target/{}", ctx.profile_name));
+    let dep_manifest = Manifest::load(&dep_dir.join("Ordo.toml"))?;
+    let dep_pkg_name = dep_manifest
+        .package
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or(name);
+
+    let dep_output_dir = if ctx.workspace_root.is_some() {
+        ctx.target_dir.join(&ctx.profile_name).join(dep_pkg_name)
+    } else {
+        dep_dir.join(format!("target/{}", ctx.profile_name))
+    };
     let (mut lib_dirs, mut libs) = scan_library_artifacts(&dep_output_dir);
     let mut frameworks = Vec::new();
 
-    let dep_cache_path = dep_dir.join("target").join(DEP_CACHE_FILE);
+    let dep_cache_path = dep_output_dir.join(DEP_CACHE_FILE);
     if let Ok(transitive) = load_dep_cache(&dep_cache_path) {
         for t in &transitive {
             include_dirs.extend(t.include_dirs.iter().cloned());
@@ -984,6 +1023,7 @@ mod tests {
         let mut ctx = BuildContext {
             project_root: PathBuf::from("/tmp"),
             workspace_root: None,
+            target_dir: PathBuf::from("/tmp/target"),
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -1005,6 +1045,7 @@ mod tests {
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
             workspace_root: None,
+            target_dir: tmp.path().join("target"),
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -1039,6 +1080,7 @@ type = "static-library"
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
             workspace_root: None,
+            target_dir: tmp.path().join("target"),
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,
@@ -1074,6 +1116,7 @@ type = "static-library"
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
             workspace_root: None,
+            target_dir: tmp.path().join("target"),
             profile_name: "debug".to_string(),
             release: false,
             jobs: None,

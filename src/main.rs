@@ -64,8 +64,12 @@ fn main() -> Result<()> {
             };
             cli::build::run(&opts)?;
         }
-        Command::Run { args, release } => {
-            cli::run::run(&args, release)?;
+        Command::Run {
+            args,
+            release,
+            package,
+        } => {
+            cli::run::run(&args, release, package.as_deref())?;
         }
         Command::Test { .. } => {
             eprintln!("ordo test: not yet implemented");

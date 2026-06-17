@@ -122,6 +122,10 @@ pub enum Command {
         /// Build with release profile
         #[arg(long)]
         release: bool,
+
+        /// Run a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Run tests

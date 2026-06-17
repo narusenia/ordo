@@ -510,10 +510,7 @@ mod tests {
         let err = parse("").unwrap_err();
         assert!(matches!(err, ManifestError::ValidationError { .. }));
         let msg = err.to_string();
-        assert!(
-            msg.contains("[package] or [workspace]"),
-            "got: {msg}"
-        );
+        assert!(msg.contains("[package] or [workspace]"), "got: {msg}");
     }
 
     #[test]
@@ -1027,7 +1024,10 @@ mod tests {
         let ws = m.workspace.as_ref().unwrap();
         assert_eq!(ws.dependencies.len(), 2);
         assert_eq!(ws.dependencies["fmt"].version.as_deref(), Some("11"));
-        assert_eq!(ws.dependencies["spdlog"].provider, Some(ProviderKind::Vcpkg));
+        assert_eq!(
+            ws.dependencies["spdlog"].provider,
+            Some(ProviderKind::Vcpkg)
+        );
     }
 
     #[test]

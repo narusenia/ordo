@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
-use crate::core::manifest::{
-    DependencySource, Language, Manifest, Toolchain, WorkspaceConfig,
-};
+use crate::core::manifest::{DependencySource, Language, Manifest, Toolchain, WorkspaceConfig};
 use miette::{Result, bail};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -27,7 +25,10 @@ impl Workspace {
         let root_manifest = Manifest::load(&manifest_path)?;
 
         let ws_config = root_manifest.workspace.as_ref().ok_or_else(|| {
-            miette::miette!("Ordo.toml at {} does not contain [workspace]", root_dir.display())
+            miette::miette!(
+                "Ordo.toml at {} does not contain [workspace]",
+                root_dir.display()
+            )
         })?;
 
         let member_dirs = discover_members(root_dir, ws_config)?;
@@ -36,10 +37,7 @@ impl Workspace {
         for dir in &member_dirs {
             let member_manifest_path = dir.join("Ordo.toml");
             if !member_manifest_path.exists() {
-                bail!(
-                    "workspace member '{}' has no Ordo.toml",
-                    dir.display()
-                );
+                bail!("workspace member '{}' has no Ordo.toml", dir.display());
             }
             let mut manifest = Manifest::load(&member_manifest_path)?;
             let pkg = manifest.package.as_ref().ok_or_else(|| {
@@ -139,7 +137,8 @@ impl MemberDag {
             for spec in member.manifest.dependencies.values() {
                 if spec.source_kind() == DependencySource::Path
                     && let Some(ref path) = spec.path
-                    && let Ok(dep_manifest_path) = std::fs::canonicalize(member.dir.join(path).join("Ordo.toml"))
+                    && let Ok(dep_manifest_path) =
+                        std::fs::canonicalize(member.dir.join(path).join("Ordo.toml"))
                     && let Ok(dep_manifest) = Manifest::load(&dep_manifest_path)
                     && let Some(ref pkg) = dep_manifest.package
                     && member_names.contains(pkg.name.as_str())
@@ -155,7 +154,10 @@ impl MemberDag {
     }
 
     pub fn deps_of(&self, name: &str) -> &[String] {
-        self.adjacency.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+        self.adjacency
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn transitive_deps(&self, name: &str) -> BTreeSet<String> {
@@ -253,8 +255,9 @@ fn discover_members(root_dir: &Path, config: &WorkspaceConfig) -> Result<Vec<Pat
         for entry in matches {
             let path = entry.map_err(|e| miette::miette!("glob error: {}", e))?;
             if path.is_dir() && path.join("Ordo.toml").exists() {
-                let canonical = std::fs::canonicalize(&path)
-                    .map_err(|e| miette::miette!("failed to canonicalize {}: {}", path.display(), e))?;
+                let canonical = std::fs::canonicalize(&path).map_err(|e| {
+                    miette::miette!("failed to canonicalize {}: {}", path.display(), e)
+                })?;
                 dirs.insert(canonical);
             }
         }
@@ -288,10 +291,7 @@ fn build_exclude_set(root_dir: &Path, exclude: &[String]) -> Result<BTreeSet<Pat
 
 // --- Workspace dependency resolution ---
 
-fn resolve_workspace_deps(
-    member: &mut Manifest,
-    ws_config: &WorkspaceConfig,
-) -> Result<()> {
+fn resolve_workspace_deps(member: &mut Manifest, ws_config: &WorkspaceConfig) -> Result<()> {
     let ws_deps = &ws_config.dependencies;
 
     for (name, spec) in &mut member.dependencies {
@@ -362,18 +362,24 @@ mod tests {
             members = ["libs/*"]
             "#,
             &[
-                ("libs/core", r#"
+                (
+                    "libs/core",
+                    r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("libs/utils", r#"
+                "#,
+                ),
+                (
+                    "libs/utils",
+                    r#"
                     [package]
                     name = "utils"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -395,18 +401,24 @@ mod tests {
             exclude = ["libs/experimental"]
             "#,
             &[
-                ("libs/core", r#"
+                (
+                    "libs/core",
+                    r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("libs/experimental", r#"
+                "#,
+                ),
+                (
+                    "libs/experimental",
+                    r#"
                     [package]
                     name = "experimental"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -427,8 +439,9 @@ mod tests {
             [workspace.dependencies]
             fmt = "11"
             "#,
-            &[
-                ("apps/myapp", r#"
+            &[(
+                "apps/myapp",
+                r#"
                     [package]
                     name = "myapp"
                     version = "0.1.0"
@@ -436,8 +449,8 @@ mod tests {
 
                     [dependencies]
                     fmt = { workspace = true }
-                "#),
-            ],
+                "#,
+            )],
         );
 
         let ws = Workspace::load(tmp.path()).unwrap();
@@ -456,8 +469,9 @@ mod tests {
             [workspace]
             members = ["apps/*"]
             "#,
-            &[
-                ("apps/myapp", r#"
+            &[(
+                "apps/myapp",
+                r#"
                     [package]
                     name = "myapp"
                     version = "0.1.0"
@@ -465,13 +479,16 @@ mod tests {
 
                     [dependencies]
                     fmt = { workspace = true }
-                "#),
-            ],
+                "#,
+            )],
         );
 
         let err = Workspace::load(tmp.path()).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("not declared in [workspace.dependencies]"), "got: {msg}");
+        assert!(
+            msg.contains("not declared in [workspace.dependencies]"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -491,13 +508,18 @@ mod tests {
             cpp = "c++23"
             "#,
             &[
-                ("libs/core", r#"
+                (
+                    "libs/core",
+                    r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("libs/special", r#"
+                "#,
+                ),
+                (
+                    "libs/special",
+                    r#"
                     [package]
                     name = "special"
                     version = "0.1.0"
@@ -505,7 +527,8 @@ mod tests {
 
                     [toolchain]
                     compiler = "gcc"
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -515,16 +538,28 @@ mod tests {
 
         let core = ws.find_member("core").unwrap();
         let core_tc = core.effective_toolchain(root_tc);
-        assert_eq!(core_tc.compiler, Some(crate::core::manifest::CompilerKind::Clang));
+        assert_eq!(
+            core_tc.compiler,
+            Some(crate::core::manifest::CompilerKind::Clang)
+        );
         assert_eq!(core_tc.linker, Some(crate::core::manifest::LinkerKind::Lld));
 
         let special = ws.find_member("special").unwrap();
         let special_tc = special.effective_toolchain(root_tc);
-        assert_eq!(special_tc.compiler, Some(crate::core::manifest::CompilerKind::Gcc));
-        assert_eq!(special_tc.linker, Some(crate::core::manifest::LinkerKind::Lld));
+        assert_eq!(
+            special_tc.compiler,
+            Some(crate::core::manifest::CompilerKind::Gcc)
+        );
+        assert_eq!(
+            special_tc.linker,
+            Some(crate::core::manifest::LinkerKind::Lld)
+        );
 
         let core_lang = core.effective_language(root_lang);
-        assert_eq!(core_lang.cpp, Some(crate::core::manifest::CppStandard::Cpp23));
+        assert_eq!(
+            core_lang.cpp,
+            Some(crate::core::manifest::CppStandard::Cpp23)
+        );
     }
 
     #[test]
@@ -537,18 +572,24 @@ mod tests {
             members = ["libs/*", "extras/*"]
             "#,
             &[
-                ("libs/mylib", r#"
+                (
+                    "libs/mylib",
+                    r#"
                     [package]
                     name = "mylib"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("extras/mylib", r#"
+                "#,
+                ),
+                (
+                    "extras/mylib",
+                    r#"
                     [package]
                     name = "mylib"
                     version = "0.2.0"
                     type = "static-library"
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -567,13 +608,18 @@ mod tests {
             members = ["libs/*", "apps/*"]
             "#,
             &[
-                ("libs/core", r#"
+                (
+                    "libs/core",
+                    r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("libs/utils", r#"
+                "#,
+                ),
+                (
+                    "libs/utils",
+                    r#"
                     [package]
                     name = "utils"
                     version = "0.1.0"
@@ -581,8 +627,11 @@ mod tests {
 
                     [dependencies]
                     core = { path = "../core" }
-                "#),
-                ("apps/myapp", r#"
+                "#,
+                ),
+                (
+                    "apps/myapp",
+                    r#"
                     [package]
                     name = "myapp"
                     version = "0.1.0"
@@ -590,7 +639,8 @@ mod tests {
 
                     [dependencies]
                     utils = { path = "../../libs/utils" }
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -615,13 +665,18 @@ mod tests {
             members = ["libs/*", "apps/*"]
             "#,
             &[
-                ("libs/core", r#"
+                (
+                    "libs/core",
+                    r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-                ("libs/utils", r#"
+                "#,
+                ),
+                (
+                    "libs/utils",
+                    r#"
                     [package]
                     name = "utils"
                     version = "0.1.0"
@@ -629,8 +684,11 @@ mod tests {
 
                     [dependencies]
                     core = { path = "../core" }
-                "#),
-                ("apps/myapp", r#"
+                "#,
+                ),
+                (
+                    "apps/myapp",
+                    r#"
                     [package]
                     name = "myapp"
                     version = "0.1.0"
@@ -638,7 +696,8 @@ mod tests {
 
                     [dependencies]
                     utils = { path = "../../libs/utils" }
-                "#),
+                "#,
+                ),
             ],
         );
 
@@ -679,14 +738,15 @@ mod tests {
             [workspace]
             members = ["libs/*"]
             "#,
-            &[
-                ("libs/core", r#"
+            &[(
+                "libs/core",
+                r#"
                     [package]
                     name = "core"
                     version = "0.1.0"
                     type = "static-library"
-                "#),
-            ],
+                "#,
+            )],
         );
 
         let ws = Workspace::load(tmp.path()).unwrap();

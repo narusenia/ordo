@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::core::manifest::{DependencySource, DependencySpec, Manifest};
-use miette::{bail, Result};
+use miette::{Result, bail};
 use pubgrub::{OfflineDependencyProvider, Ranges, resolve};
 use semver::Version;
 use std::collections::BTreeMap;
@@ -38,9 +38,8 @@ pub fn resolve_dependencies(manifest: &Manifest) -> Result<Vec<ResolvedPackage>>
 
     provider.add_dependencies(root_name.clone(), root_version.clone(), root_deps);
 
-    let solution = resolve(&provider, root_name.clone(), root_version).map_err(|e| {
-        miette::miette!("dependency resolution failed:\n{e}")
-    })?;
+    let solution = resolve(&provider, root_name.clone(), root_version)
+        .map_err(|e| miette::miette!("dependency resolution failed:\n{e}"))?;
 
     let mut resolved = Vec::new();
     for (pkg, version) in solution {
@@ -75,14 +74,14 @@ fn spec_to_range(name: &str, spec: &DependencySpec) -> Result<SemverRanges> {
                 None => Ok(Ranges::full()),
             }
         }
-        DependencySource::Provider(_) | DependencySource::Registry => {
-            match &spec.version {
-                Some(v) => parse_version_req(v),
-                None => Ok(Ranges::full()),
-            }
-        }
+        DependencySource::Provider(_) | DependencySource::Registry => match &spec.version {
+            Some(v) => parse_version_req(v),
+            None => Ok(Ranges::full()),
+        },
         DependencySource::Unknown => {
-            bail!("dependency '{name}' has no source specified (add path, git, provider, or version)")
+            bail!(
+                "dependency '{name}' has no source specified (add path, git, provider, or version)"
+            )
         }
     }
 }
@@ -110,8 +109,7 @@ fn register_stub_package(
 fn parse_version(s: &str) -> Result<Version> {
     // Normalize: "11" → "11.0.0", "1.2" → "1.2.0"
     let normalized = normalize_version(s);
-    Version::parse(&normalized)
-        .map_err(|e| miette::miette!("invalid version '{s}': {e}"))
+    Version::parse(&normalized).map_err(|e| miette::miette!("invalid version '{s}': {e}"))
 }
 
 fn parse_version_req(req: &str) -> Result<SemverRanges> {

@@ -726,7 +726,10 @@ mod tests {
         let dep = &m.dependencies["spdlog"];
         assert_eq!(dep.provider, Some(ProviderKind::Vcpkg));
         assert_eq!(dep.version.as_deref(), Some("1.14"));
-        assert_eq!(dep.source_kind(), DependencySource::Provider(ProviderKind::Vcpkg));
+        assert_eq!(
+            dep.source_kind(),
+            DependencySource::Provider(ProviderKind::Vcpkg)
+        );
     }
 
     #[test]
@@ -765,7 +768,10 @@ mod tests {
 
         let dep = &m.dependencies["zlib"];
         assert_eq!(dep.provider, Some(ProviderKind::System));
-        assert_eq!(dep.source_kind(), DependencySource::Provider(ProviderKind::System));
+        assert_eq!(
+            dep.source_kind(),
+            DependencySource::Provider(ProviderKind::System)
+        );
     }
 
     #[test]
@@ -863,11 +869,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(m.dependencies.len(), 5);
-        assert_eq!(m.dependencies["fmt"].source_kind(), DependencySource::Registry);
+        assert_eq!(
+            m.dependencies["fmt"].source_kind(),
+            DependencySource::Registry
+        );
         assert_eq!(m.dependencies["core"].source_kind(), DependencySource::Path);
-        assert_eq!(m.dependencies["spdlog"].source_kind(), DependencySource::Provider(ProviderKind::Vcpkg));
-        assert_eq!(m.dependencies["openssl"].source_kind(), DependencySource::Provider(ProviderKind::PkgConfig));
-        assert_eq!(m.dependencies["zlib"].source_kind(), DependencySource::Provider(ProviderKind::System));
+        assert_eq!(
+            m.dependencies["spdlog"].source_kind(),
+            DependencySource::Provider(ProviderKind::Vcpkg)
+        );
+        assert_eq!(
+            m.dependencies["openssl"].source_kind(),
+            DependencySource::Provider(ProviderKind::PkgConfig)
+        );
+        assert_eq!(
+            m.dependencies["zlib"].source_kind(),
+            DependencySource::Provider(ProviderKind::System)
+        );
     }
 
     #[test]

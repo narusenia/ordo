@@ -22,7 +22,11 @@ pub fn success(verb: &str, message: &str) {
     if verb.is_empty() {
         eprintln!("{} {message}", GREEN_BOLD.apply_to(ICON_SUCCESS));
     } else {
-        eprintln!("{} {} {message}", GREEN_BOLD.apply_to(ICON_SUCCESS), GREEN_BOLD.apply_to(verb));
+        eprintln!(
+            "{} {} {message}",
+            GREEN_BOLD.apply_to(ICON_SUCCESS),
+            GREEN_BOLD.apply_to(verb)
+        );
     }
 }
 
@@ -30,20 +34,36 @@ pub fn error(verb: &str, message: &str) {
     if verb.is_empty() {
         eprintln!("{} {message}", RED_BOLD.apply_to(ICON_FAILURE));
     } else {
-        eprintln!("{} {} {message}", RED_BOLD.apply_to(ICON_FAILURE), RED_BOLD.apply_to(verb));
+        eprintln!(
+            "{} {} {message}",
+            RED_BOLD.apply_to(ICON_FAILURE),
+            RED_BOLD.apply_to(verb)
+        );
     }
 }
 
 pub fn warn(verb: &str, message: &str) {
-    eprintln!("{} {} {message}", YELLOW_BOLD.apply_to(ICON_WARNING), YELLOW_BOLD.apply_to(verb));
+    eprintln!(
+        "{} {} {message}",
+        YELLOW_BOLD.apply_to(ICON_WARNING),
+        YELLOW_BOLD.apply_to(verb)
+    );
 }
 
 pub fn skip(verb: &str, message: &str) {
-    eprintln!("{} {} {message}", DIM.apply_to(ICON_SKIP), DIM.apply_to(verb));
+    eprintln!(
+        "{} {} {message}",
+        DIM.apply_to(ICON_SKIP),
+        DIM.apply_to(verb)
+    );
 }
 
 pub fn run_icon(verb: &str, message: &str) {
-    eprintln!("{} {} {message}", GREEN_BOLD.apply_to(ICON_RUN), GREEN_BOLD.apply_to(verb));
+    eprintln!(
+        "{} {} {message}",
+        GREEN_BOLD.apply_to(ICON_RUN),
+        GREEN_BOLD.apply_to(verb)
+    );
 }
 
 pub fn meta(message: &str) {
@@ -59,7 +79,10 @@ pub fn verbose_cmd(cmd: &str) {
 }
 
 pub fn summary_bar() {
-    eprintln!("{}", DIM.apply_to("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+    eprintln!(
+        "{}",
+        DIM.apply_to("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    );
 }
 
 pub fn create_spinner(message: &str) -> ProgressBar {
@@ -67,7 +90,10 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
-            .template(&format!("{{spinner}} {} {{msg}}", CYAN_BOLD.apply_to("{prefix}")))
+            .template(&format!(
+                "{{spinner}} {} {{msg}}",
+                CYAN_BOLD.apply_to("{prefix}")
+            ))
             .unwrap_or_else(|_| ProgressStyle::default_spinner()),
     );
     pb.enable_steady_tick(Duration::from_millis(80));
@@ -83,7 +109,8 @@ pub struct SpinnerWithDetail {
 
 impl SpinnerWithDetail {
     pub fn set_detail(&self, msg: &str) {
-        self.detail.set_message(format!("  {} {}", DIM.apply_to("└"), DIM.apply_to(msg)));
+        self.detail
+            .set_message(format!("  {} {}", DIM.apply_to("└"), DIM.apply_to(msg)));
     }
 
     pub fn finish_success(&self, verb: &str, message: &str) {
@@ -136,7 +163,11 @@ pub fn create_spinner_with_detail(message: &str) -> SpinnerWithDetail {
     );
     detail.enable_steady_tick(Duration::from_millis(80));
 
-    SpinnerWithDetail { mp, spinner, detail }
+    SpinnerWithDetail {
+        mp,
+        spinner,
+        detail,
+    }
 }
 
 pub fn create_multi_progress() -> MultiProgress {

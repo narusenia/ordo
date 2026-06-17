@@ -11,7 +11,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "ordo", version, about = "A modern project orchestrator for C and C++")]
+#[command(
+    name = "ordo",
+    version,
+    about = "A modern project orchestrator for C and C++"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

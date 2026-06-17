@@ -1,5 +1,5 @@
 use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub struct ConanProvider {
@@ -42,17 +42,11 @@ impl ConanProvider {
     }
 
     fn ensure_default_profile(&self) -> Result<()> {
-        let output = self.runner.run(
-            "conan",
-            &["profile", "path", "default"],
-            None,
-        )?;
+        let output = self
+            .runner
+            .run("conan", &["profile", "path", "default"], None)?;
         if !output.status.success() {
-            let detect = self.runner.run(
-                "conan",
-                &["profile", "detect"],
-                None,
-            )?;
+            let detect = self.runner.run("conan", &["profile", "detect"], None)?;
             if !detect.status.success() {
                 bail!(
                     "conan: failed to create default profile\n  \
@@ -132,7 +126,13 @@ impl ConanProvider {
 
         for pc_path in &pc_files {
             let content = std::fs::read_to_string(pc_path).into_diagnostic()?;
-            parse_pc_content(&content, &mut include_dirs, &mut lib_dirs, &mut libs, &mut frameworks);
+            parse_pc_content(
+                &content,
+                &mut include_dirs,
+                &mut lib_dirs,
+                &mut libs,
+                &mut frameworks,
+            );
         }
 
         include_dirs.sort();
@@ -212,9 +212,7 @@ fn build_conanfile(name: &str, version: Option<&str>) -> String {
         Some(v) => format!("{name}/{v}"),
         None => format!("{name}/[*]"),
     };
-    format!(
-        "[requires]\n{ref_str}\n\n[generators]\nPkgConfigDeps\n"
-    )
+    format!("[requires]\n{ref_str}\n\n[generators]\nPkgConfigDeps\n")
 }
 
 fn find_pc_files(dir: &Path, name: &str) -> Vec<PathBuf> {
@@ -243,7 +241,8 @@ fn expand_pc_variables(content: &str) -> String {
     for line in content.lines() {
         let line = line.trim();
         if let Some((key, val)) = line.split_once('=')
-            && !key.contains(':') && !key.contains(' ')
+            && !key.contains(':')
+            && !key.contains(' ')
         {
             let expanded_val = substitute(&vars, val);
             vars.insert(key.to_string(), expanded_val.clone());
@@ -297,7 +296,8 @@ fn parse_pc_content(
                     frameworks.push(fw.to_string());
                     i += 2;
                     continue;
-                } else if let Some(rest) = token.strip_prefix("-Wl,-weak_framework,")
+                } else if let Some(rest) = token
+                    .strip_prefix("-Wl,-weak_framework,")
                     .or_else(|| token.strip_prefix("-Wl,-framework,"))
                 {
                     frameworks.push(rest.to_string());

@@ -1,7 +1,7 @@
 use crate::cli::build::{BuildOptions, BuildResult};
 use crate::core::manifest::PackageType;
 use crate::util::style;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::process::Command;
 
 pub fn run(args: &[String], release: bool) -> Result<()> {
@@ -20,7 +20,10 @@ pub fn run(args: &[String], release: bool) -> Result<()> {
     } = crate::cli::build::run(&build_opts)?;
 
     if package_type != PackageType::Executable {
-        bail!("cannot run a {} project — only executables can be run", package_type);
+        bail!(
+            "cannot run a {} project — only executables can be run",
+            package_type
+        );
     }
 
     if !output_path.exists() {

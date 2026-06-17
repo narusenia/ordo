@@ -1,6 +1,6 @@
 use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
 use crate::util::paths::OrdoPaths;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub struct GitProvider {
@@ -43,7 +43,14 @@ impl GitProvider {
             on_progress("Fetching updates…");
             self.runner.run_streaming(
                 "git",
-                &["-C", &cache_path.display().to_string(), "fetch", "--all", "--prune", "--progress"],
+                &[
+                    "-C",
+                    &cache_path.display().to_string(),
+                    "fetch",
+                    "--all",
+                    "--prune",
+                    "--progress",
+                ],
                 None,
                 on_progress,
             )?;
@@ -55,7 +62,13 @@ impl GitProvider {
         on_progress(&format!("Cloning {url}…"));
         let output = self.runner.run_streaming(
             "git",
-            &["clone", "--bare", "--progress", url, &cache_path.display().to_string()],
+            &[
+                "clone",
+                "--bare",
+                "--progress",
+                url,
+                &cache_path.display().to_string(),
+            ],
             None,
             on_progress,
         )?;
@@ -71,12 +84,7 @@ impl GitProvider {
         Ok(cache_path)
     }
 
-    fn checkout_to_worktree(
-        &self,
-        bare_path: &Path,
-        git_ref: &str,
-        dest: &Path,
-    ) -> Result<()> {
+    fn checkout_to_worktree(&self, bare_path: &Path, git_ref: &str, dest: &Path) -> Result<()> {
         if dest.exists() {
             std::fs::remove_dir_all(dest).into_diagnostic()?;
         }
@@ -87,8 +95,10 @@ impl GitProvider {
             &[
                 "clone",
                 "--shared",
-                "--branch", git_ref,
-                "--depth", "1",
+                "--branch",
+                git_ref,
+                "--depth",
+                "1",
                 &bare_path.display().to_string(),
                 &dest.display().to_string(),
             ],
@@ -99,8 +109,11 @@ impl GitProvider {
             let output_rev = self.runner.run(
                 "git",
                 &[
-                    "--git-dir", &bare_path.display().to_string(),
-                    "rev-parse", "--verify", git_ref,
+                    "--git-dir",
+                    &bare_path.display().to_string(),
+                    "rev-parse",
+                    "--verify",
+                    git_ref,
                 ],
                 None,
             )?;
@@ -119,7 +132,12 @@ impl GitProvider {
 
             self.runner.run(
                 "git",
-                &["clone", "--shared", &bare_path.display().to_string(), &dest.display().to_string()],
+                &[
+                    "clone",
+                    "--shared",
+                    &bare_path.display().to_string(),
+                    &dest.display().to_string(),
+                ],
                 None,
             )?;
 
@@ -137,8 +155,10 @@ impl GitProvider {
         let output = self.runner.run(
             "git",
             &[
-                "--git-dir", &bare_path.display().to_string(),
-                "rev-parse", git_ref,
+                "--git-dir",
+                &bare_path.display().to_string(),
+                "rev-parse",
+                git_ref,
             ],
             None,
         )?;
@@ -175,12 +195,13 @@ pub struct GitDepSpec {
 }
 
 impl GitDepSpec {
-    pub fn from_dep(git_url: &str, tag: Option<&str>, branch: Option<&str>, rev: Option<&str>) -> Self {
-        let git_ref = tag
-            .or(branch)
-            .or(rev)
-            .unwrap_or("HEAD")
-            .to_string();
+    pub fn from_dep(
+        git_url: &str,
+        tag: Option<&str>,
+        branch: Option<&str>,
+        rev: Option<&str>,
+    ) -> Self {
+        let git_ref = tag.or(branch).or(rev).unwrap_or("HEAD").to_string();
         Self {
             url: git_url.to_string(),
             git_ref,
@@ -203,7 +224,12 @@ impl Provider for GitProvider {
 }
 
 impl GitProvider {
-    pub fn resolve_git(&self, name: &str, spec: &GitDepSpec, on_progress: &dyn Fn(&str)) -> Result<ResolvedDep> {
+    pub fn resolve_git(
+        &self,
+        name: &str,
+        spec: &GitDepSpec,
+        on_progress: &dyn Fn(&str),
+    ) -> Result<ResolvedDep> {
         let bare_path = self.clone_or_fetch(&spec.url, on_progress)?;
         let commit = self.resolve_commit_hash(&bare_path, &spec.git_ref)?;
 
@@ -220,10 +246,16 @@ impl GitProvider {
         })
     }
 
-    pub fn fetch_git(&self, name: &str, spec: &GitDepSpec, on_progress: &dyn Fn(&str)) -> Result<FetchedDep> {
+    pub fn fetch_git(
+        &self,
+        name: &str,
+        spec: &GitDepSpec,
+        on_progress: &dyn Fn(&str),
+    ) -> Result<FetchedDep> {
         let bare_path = self.clone_or_fetch(&spec.url, on_progress)?;
 
-        let checkout_dir = self.git_cache_dir()
+        let checkout_dir = self
+            .git_cache_dir()
             .join("checkouts")
             .join(url_to_slug(&spec.url))
             .join(&spec.git_ref);
@@ -351,7 +383,8 @@ mod tests {
 
     #[test]
     fn git_dep_spec_tag() {
-        let spec = GitDepSpec::from_dep("https://github.com/fmtlib/fmt", Some("11.1.0"), None, None);
+        let spec =
+            GitDepSpec::from_dep("https://github.com/fmtlib/fmt", Some("11.1.0"), None, None);
         assert_eq!(spec.git_ref, "11.1.0");
     }
 
@@ -380,7 +413,8 @@ mod tests {
         runner.on_args_containing("fetch", MockRunner::success_output(""));
 
         let provider = GitProvider::with_runner_and_cache(Box::new(runner), cache_dir);
-        let spec = GitDepSpec::from_dep("https://github.com/fmtlib/fmt", Some("11.1.0"), None, None);
+        let spec =
+            GitDepSpec::from_dep("https://github.com/fmtlib/fmt", Some("11.1.0"), None, None);
 
         let resolved = provider.resolve_git("fmt", &spec, &|_| {}).unwrap();
         assert_eq!(resolved.name, "fmt");

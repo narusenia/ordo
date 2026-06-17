@@ -5,7 +5,7 @@ use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::{Provider, ResolvedDep};
 use crate::util::style;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use promptuity::prompts::{Select, SelectOption};
 use promptuity::themes::MinimalTheme;
 use promptuity::{Promptuity, Term};
@@ -33,7 +33,11 @@ fn parse_spec(spec: &str) -> ParsedSpec {
         (rest.to_string(), None)
     };
 
-    ParsedSpec { provider, name, version }
+    ParsedSpec {
+        provider,
+        name,
+        version,
+    }
 }
 
 fn prompt_provider() -> Result<String> {
@@ -73,12 +77,7 @@ pub fn run(spec: &str, provider_flag: Option<&str>) -> Result<()> {
     if provider == "git" {
         let url = expand_git_shorthand(&parsed.name);
         let dep_name = git_repo_name(&parsed.name);
-        return run_inner_git(
-            &dir,
-            &dep_name,
-            &url,
-            parsed.version.as_deref(),
-        );
+        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref());
     }
 
     run_inner(
@@ -132,7 +131,13 @@ fn run_inner_git(dir: &Path, name: &str, url: &str, tag: Option<&str>) -> Result
     Ok(())
 }
 
-fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, resolve: bool) -> Result<()> {
+fn run_inner(
+    dir: &Path,
+    provider: &str,
+    name: &str,
+    version: Option<&str>,
+    resolve: bool,
+) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
@@ -163,7 +168,9 @@ fn run_inner(dir: &Path, provider: &str, name: &str, version: Option<&str>, reso
 
     std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
 
-    let version_str = effective_version.map(|v| format!(" v{v}")).unwrap_or_default();
+    let version_str = effective_version
+        .map(|v| format!(" v{v}"))
+        .unwrap_or_default();
     style::success("Added", &format!("{name}{version_str} ({provider})"));
 
     Ok(())
@@ -183,7 +190,11 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<O
             let root = p.vcpkg_root()?;
             let triplet = VcpkgProvider::host_triplet();
             let ver = p.query_version(&root, name, triplet);
-            Ok(ResolvedDep { name: name.to_string(), version: ver, source: "vcpkg".to_string() })
+            Ok(ResolvedDep {
+                name: name.to_string(),
+                version: ver,
+                source: "vcpkg".to_string(),
+            })
         }
         "conan" => {
             let p = ConanProvider::new();
@@ -199,12 +210,13 @@ fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<O
 
     match result {
         Ok(dep) => {
-            sw.finish_success(
-                "Resolved",
-                &format!("{name} v{} ({provider})", dep.version),
-            );
+            sw.finish_success("Resolved", &format!("{name} v{} ({provider})", dep.version));
             let v = dep.version.clone();
-            Ok(if v == "system" || v == "unknown" { None } else { Some(v) })
+            Ok(if v == "system" || v == "unknown" {
+                None
+            } else {
+                Some(v)
+            })
         }
         Err(e) => {
             sw.finish_error("Failed", &format!("{name} ({provider})"));
@@ -230,7 +242,9 @@ fn build_dep_value(provider: &str, version: Option<&str>) -> Result<Value> {
             Ok(Value::InlineTable(table))
         }
         "git" => {
-            let url = version.ok_or_else(|| miette::miette!("git provider requires a URL as version (e.g. raylib@https://...)"))?;
+            let url = version.ok_or_else(|| {
+                miette::miette!("git provider requires a URL as version (e.g. raylib@https://...)")
+            })?;
             let mut table = InlineTable::new();
             table.insert("git", url.into());
             Ok(Value::InlineTable(table))
@@ -384,7 +398,13 @@ type = "executable"
     #[test]
     fn add_git_dep_with_tag() {
         let tmp = setup_project();
-        run_inner_git(tmp.path(), "fmt", "https://github.com/fmtlib/fmt", Some("11.1.0")).unwrap();
+        run_inner_git(
+            tmp.path(),
+            "fmt",
+            "https://github.com/fmtlib/fmt",
+            Some("11.1.0"),
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("git = \"https://github.com/fmtlib/fmt\""));

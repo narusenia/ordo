@@ -16,7 +16,13 @@ impl Compiler for ClangCompiler {
         "clang++"
     }
 
-    fn compile_args(&self, src: &Path, obj: &Path, depfile: &Path, flags: &CompileFlags) -> Vec<String> {
+    fn compile_args(
+        &self,
+        src: &Path,
+        obj: &Path,
+        depfile: &Path,
+        flags: &CompileFlags,
+    ) -> Vec<String> {
         let mut args = vec!["-c".to_string()];
 
         if let Some(std) = flags.cpp_standard {
@@ -123,7 +129,10 @@ mod tests {
         let c = ClangCompiler;
         let flags = CompileFlags {
             defines: vec!["FOO=1".to_string(), "BAR".to_string()],
-            include_dirs: vec![PathBuf::from("include"), PathBuf::from("vendor/fmt/include")],
+            include_dirs: vec![
+                PathBuf::from("include"),
+                PathBuf::from("vendor/fmt/include"),
+            ],
             ..CompileFlags::default()
         };
 

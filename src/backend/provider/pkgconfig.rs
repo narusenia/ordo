@@ -1,5 +1,5 @@
 use super::{FetchedDep, Provider, ResolvedDep};
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -132,10 +132,13 @@ mod tests {
     #[test]
     fn parse_include_dirs_basic() {
         let dirs = parse_include_dirs("-I/usr/include/openssl -I/opt/local/include");
-        assert_eq!(dirs, vec![
-            PathBuf::from("/usr/include/openssl"),
-            PathBuf::from("/opt/local/include"),
-        ]);
+        assert_eq!(
+            dirs,
+            vec![
+                PathBuf::from("/usr/include/openssl"),
+                PathBuf::from("/opt/local/include"),
+            ]
+        );
     }
 
     #[test]
@@ -173,7 +176,9 @@ mod tests {
 
     #[test]
     fn parse_frameworks_from_libs_line() {
-        let fws = parse_frameworks("-L/usr/lib -lglfw3 -framework Cocoa -framework IOKit -framework CoreFoundation");
+        let fws = parse_frameworks(
+            "-L/usr/lib -lglfw3 -framework Cocoa -framework IOKit -framework CoreFoundation",
+        );
         assert_eq!(fws, vec!["Cocoa", "IOKit", "CoreFoundation"]);
     }
 

@@ -90,7 +90,11 @@ impl<'a> NinjaGenerator<'a> {
         writeln!(out, "  description = Compiling $in").unwrap();
         writeln!(out).unwrap();
 
-        let link_exe = if self.has_cpp_sources() { cpp_exe } else { c_exe };
+        let link_exe = if self.has_cpp_sources() {
+            cpp_exe
+        } else {
+            c_exe
+        };
         match self.package_type {
             PackageType::Executable => {
                 writeln!(out, "rule link").unwrap();
@@ -345,10 +349,7 @@ mod tests {
     #[test]
     fn ninja_multiple_sources() {
         let compiler = ClangCompiler;
-        let sources = vec![
-            PathBuf::from("src/main.cpp"),
-            PathBuf::from("src/util.cpp"),
-        ];
+        let sources = vec![PathBuf::from("src/main.cpp"), PathBuf::from("src/util.cpp")];
         let generator = NinjaGenerator::new(
             &compiler,
             sources,
@@ -378,10 +379,7 @@ mod tests {
     #[test]
     fn compile_commands_multiple_sources() {
         let compiler = ClangCompiler;
-        let sources = vec![
-            PathBuf::from("src/main.cpp"),
-            PathBuf::from("src/util.cpp"),
-        ];
+        let sources = vec![PathBuf::from("src/main.cpp"), PathBuf::from("src/util.cpp")];
         let generator = NinjaGenerator::new(
             &compiler,
             sources,

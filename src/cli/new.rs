@@ -1,6 +1,6 @@
 use crate::cli::ProjectLang;
 use crate::util::style;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use promptuity::prompts::{Input, Select, SelectOption};
 use promptuity::themes::MinimalTheme;
 use promptuity::{Promptuity, Term};
@@ -13,7 +13,9 @@ pub fn run_interactive(base: &Path, no_git: bool) -> Result<()> {
     let mut theme = MinimalTheme::default();
     let mut p = Promptuity::new(&mut term, &mut theme);
 
-    p.with_intro("Create a new project").begin().into_diagnostic()?;
+    p.with_intro("Create a new project")
+        .begin()
+        .into_diagnostic()?;
 
     let name: String = p
         .prompt(Input::new("Project name").with_placeholder("myapp"))
@@ -118,20 +120,28 @@ fn build_tree(dir: &Path, lib: bool, lang: ProjectLang) -> Vec<String> {
 
 fn create_executable(dir: &Path, name: &str, lang: ProjectLang) -> Result<()> {
     let (ext, src_content) = match lang {
-        ProjectLang::C => ("c", r#"#include <stdio.h>
+        ProjectLang::C => (
+            "c",
+            r#"#include <stdio.h>
 
 int main(void) {
     printf("Hello, world!\n");
     return 0;
 }
-"#.to_string()),
-        ProjectLang::Cpp => ("cpp", r#"#include <iostream>
+"#
+            .to_string(),
+        ),
+        ProjectLang::Cpp => (
+            "cpp",
+            r#"#include <iostream>
 
 int main() {
     std::cout << "Hello, world!" << std::endl;
     return 0;
 }
-"#.to_string()),
+"#
+            .to_string(),
+        ),
     };
 
     write_manifest(dir, name, "executable", lang)?;

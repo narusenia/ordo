@@ -6,9 +6,11 @@ use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use crate::backend::provider::{FetchedDep, Provider, ResolvedDep};
-use crate::core::manifest::{CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind};
+use crate::core::manifest::{
+    CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
+};
 use crate::util::style;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -174,7 +176,11 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (pkg-config)"));
+                        style::finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (pkg-config)"),
+                        );
                         return Err(e);
                     }
                 }
@@ -192,7 +198,11 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (system)"));
+                        style::finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (system)"),
+                        );
                         return Err(e);
                     }
                 }
@@ -218,7 +228,10 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
                 };
                 match provider.resolve_with_progress(name, spec.version.as_deref(), &on_progress) {
                     Ok(resolved) => {
-                        sw.finish_success("Resolved", &format!("{name} v{} (conan)", resolved.version));
+                        sw.finish_success(
+                            "Resolved",
+                            &format!("{name} v{} (conan)", resolved.version),
+                        );
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
@@ -259,12 +272,12 @@ fn fetch_dependencies(manifest: &Manifest) -> Result<Vec<FetchedDep>> {
     Ok(fetched)
 }
 
-fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions, deps: &[FetchedDep]) -> CompileFlags {
-    let (opt_level, debug) = if opts.release {
-        (3, false)
-    } else {
-        (0, true)
-    };
+fn build_compile_flags(
+    manifest: &Manifest,
+    opts: &BuildOptions,
+    deps: &[FetchedDep],
+) -> CompileFlags {
+    let (opt_level, debug) = if opts.release { (3, false) } else { (0, true) };
 
     let mut include_dirs = Vec::new();
     let include_path = PathBuf::from("include");
@@ -278,7 +291,11 @@ fn build_compile_flags(manifest: &Manifest, opts: &BuildOptions, deps: &[Fetched
 
     let has_cpp = manifest.language.cpp.is_some() || manifest.language.c.is_none();
     CompileFlags {
-        cpp_standard: if has_cpp { manifest.language.cpp.or(Some(CppStandard::Cpp20)) } else { None },
+        cpp_standard: if has_cpp {
+            manifest.language.cpp.or(Some(CppStandard::Cpp20))
+        } else {
+            None
+        },
         c_standard: manifest.language.c,
         opt_level,
         debug,

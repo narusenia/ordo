@@ -19,7 +19,12 @@ fn main() -> Result<()> {
     let _paths = OrdoPaths::resolve();
 
     match cli.command {
-        Command::New { name, lib, lang, no_git } => {
+        Command::New {
+            name,
+            lib,
+            lang,
+            no_git,
+        } => {
             let cwd = std::env::current_dir().into_diagnostic()?;
             match name {
                 Some(name) => {

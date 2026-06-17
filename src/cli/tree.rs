@@ -5,7 +5,7 @@ use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use crate::backend::provider::{FetchedDep, Provider};
 use crate::core::manifest::{DependencySource, Manifest, ProviderKind};
 use crate::util::style;
-use miette::{bail, Result};
+use miette::{Result, bail};
 use std::path::Path;
 
 pub fn run(dir: &Path) -> Result<()> {
@@ -16,10 +16,7 @@ pub fn run(dir: &Path) -> Result<()> {
 
     let manifest = Manifest::load(&manifest_path)?;
 
-    eprintln!(
-        "{} v{}",
-        manifest.package.name, manifest.package.version
-    );
+    eprintln!("{} v{}", manifest.package.name, manifest.package.version);
 
     if manifest.dependencies.is_empty() {
         style::meta("no dependencies");
@@ -58,7 +55,11 @@ pub fn run(dir: &Path) -> Result<()> {
                 style::tree_line(&format!("{cont}frameworks: {}", dep.frameworks.join(", ")));
             }
             if !dep.include_dirs.is_empty() {
-                let dirs: Vec<String> = dep.include_dirs.iter().map(|p| p.display().to_string()).collect();
+                let dirs: Vec<String> = dep
+                    .include_dirs
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect();
                 style::tree_line(&format!("{cont}include: {}", dirs.join(", ")));
             }
         }

@@ -314,12 +314,8 @@ mod tests {
             compiler: Some(CompilerKind::Msvc),
             linker: None,
         };
-        let config = ResolvedConfig::resolve_with(
-            &manifest_with_toolchain(),
-            &test_paths(),
-            &env,
-            &cli,
-        );
+        let config =
+            ResolvedConfig::resolve_with(&manifest_with_toolchain(), &test_paths(), &env, &cli);
 
         assert_eq!(config.compiler.value, Some(CompilerKind::Msvc));
         assert_eq!(config.compiler.origin, Origin::Cli);

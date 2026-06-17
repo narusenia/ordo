@@ -4,7 +4,7 @@ pub mod clang;
 pub mod gcc;
 pub mod msvc;
 
-use crate::core::manifest::{CompilerKind, CppStandard, CStandard, LinkerKind};
+use crate::core::manifest::{CStandard, CompilerKind, CppStandard, LinkerKind};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,13 @@ pub trait Compiler {
     fn name(&self) -> &str;
     fn c_executable(&self) -> &str;
     fn cpp_executable(&self) -> &str;
-    fn compile_args(&self, src: &Path, obj: &Path, depfile: &Path, flags: &CompileFlags) -> Vec<String>;
+    fn compile_args(
+        &self,
+        src: &Path,
+        obj: &Path,
+        depfile: &Path,
+        flags: &CompileFlags,
+    ) -> Vec<String>;
     fn link_args(&self, objects: &[PathBuf], output: &Path, flags: &LinkFlags) -> Vec<String>;
     fn syntax_only_flag(&self) -> &str;
 }
@@ -113,10 +119,7 @@ fn parse_version(output: &str) -> Option<String> {
 }
 
 fn which(exe: &str) -> Option<PathBuf> {
-    let output = std::process::Command::new("which")
-        .arg(exe)
-        .output()
-        .ok()?;
+    let output = std::process::Command::new("which").arg(exe).output().ok()?;
 
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();

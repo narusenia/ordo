@@ -1,5 +1,5 @@
 use crate::util::style;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::fs;
 use std::path::Path;
 
@@ -24,7 +24,10 @@ type = "{package_type}"
     )
     .into_diagnostic()?;
 
-    style::success("Initialized", &format!("ordo project `{name}` ({package_type})"));
+    style::success(
+        "Initialized",
+        &format!("ordo project `{name}` ({package_type})"),
+    );
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use super::{CommandRunner, FetchedDep, Provider, RealCommandRunner, ResolvedDep};
 use crate::util::paths::OrdoPaths;
-use miette::{bail, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub struct VcpkgProvider {
@@ -69,7 +69,8 @@ impl VcpkgProvider {
             "bootstrap-vcpkg.sh"
         };
 
-        self.runner.run(&dest.join(script).display().to_string(), &[], Some(dest))?;
+        self.runner
+            .run(&dest.join(script).display().to_string(), &[], Some(dest))?;
         Ok(())
     }
 
@@ -137,7 +138,11 @@ impl VcpkgProvider {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let detail = if stderr.trim().is_empty() { &stdout } else { &stderr };
+            let detail = if stderr.trim().is_empty() {
+                &stdout
+            } else {
+                &stderr
+            };
             let names: Vec<&str> = packages.iter().map(|p| p.name).collect();
             bail!(
                 "vcpkg install failed for [{}]:\n{}\n  \
@@ -150,12 +155,7 @@ impl VcpkgProvider {
         Ok(())
     }
 
-    fn parse_installed(
-        &self,
-        root: &Path,
-        name: &str,
-        triplet: &str,
-    ) -> Result<FetchedDep> {
+    fn parse_installed(&self, root: &Path, name: &str, triplet: &str) -> Result<FetchedDep> {
         let installed = root.join("installed").join(triplet);
         let include_dir = installed.join("include");
         let lib_dir = installed.join("lib");
@@ -202,7 +202,13 @@ impl VcpkgProvider {
             on_progress("Unshallowing vcpkg repository…");
             self.runner.run_streaming(
                 "git",
-                &["-C", &root.display().to_string(), "fetch", "--unshallow", "--progress"],
+                &[
+                    "-C",
+                    &root.display().to_string(),
+                    "fetch",
+                    "--unshallow",
+                    "--progress",
+                ],
                 None,
                 on_progress,
             )?;
@@ -211,11 +217,14 @@ impl VcpkgProvider {
     }
 
     fn get_baseline(&self, root: &Path) -> Option<String> {
-        let output = self.runner.run(
-            "git",
-            &["-C", &root.display().to_string(), "rev-parse", "HEAD"],
-            None,
-        ).ok()?;
+        let output = self
+            .runner
+            .run(
+                "git",
+                &["-C", &root.display().to_string(), "rev-parse", "HEAD"],
+                None,
+            )
+            .ok()?;
         let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if hash.is_empty() { None } else { Some(hash) }
     }
@@ -278,12 +287,16 @@ pub struct VcpkgPackageSpec<'a> {
 fn parse_version_constraint(version: Option<&str>) -> (Option<String>, bool) {
     match version {
         None => (None, false),
-        Some(v) if v.starts_with(">=") => {
-            (Some(normalize_vcpkg_version(v.trim_start_matches(">="))), false)
-        }
-        Some(v) if v.starts_with('^') || v.starts_with('~') => {
-            (Some(normalize_vcpkg_version(v.trim_start_matches('^').trim_start_matches('~'))), false)
-        }
+        Some(v) if v.starts_with(">=") => (
+            Some(normalize_vcpkg_version(v.trim_start_matches(">="))),
+            false,
+        ),
+        Some(v) if v.starts_with('^') || v.starts_with('~') => (
+            Some(normalize_vcpkg_version(
+                v.trim_start_matches('^').trim_start_matches('~'),
+            )),
+            false,
+        ),
         Some(v) => {
             let bare = v.strip_prefix('=').unwrap_or(v);
             (Some(normalize_vcpkg_version(bare)), true)
@@ -317,9 +330,7 @@ fn build_vcpkg_manifest_multi(packages: &[VcpkgPackageSpec<'_>], baseline: Optio
             "    {{\n      \"name\": \"{}\"{version_constraint}\n    }}",
             pkg.name
         ));
-        if pin
-            && let Some(v) = ver.as_deref()
-        {
+        if pin && let Some(v) = ver.as_deref() {
             overrides.push(format!(
                 "    {{\n      \"name\": \"{}\",\n      \"version\": \"{v}\"\n    }}",
                 pkg.name
@@ -480,15 +491,25 @@ mod tests {
     fn host_triplet_is_valid() {
         let triplet = VcpkgProvider::host_triplet();
         assert!(
-            ["x64-linux", "arm64-linux", "x64-osx", "arm64-osx", "x64-windows", "arm64-windows"]
-                .contains(&triplet)
+            [
+                "x64-linux",
+                "arm64-linux",
+                "x64-osx",
+                "arm64-osx",
+                "x64-windows",
+                "arm64-windows"
+            ]
+            .contains(&triplet)
         );
     }
 
     #[test]
     fn build_vcpkg_manifest_without_version() {
         let manifest = build_vcpkg_manifest_multi(
-            &[VcpkgPackageSpec { name: "spdlog", version: None }],
+            &[VcpkgPackageSpec {
+                name: "spdlog",
+                version: None,
+            }],
             None,
         );
         assert!(manifest.contains("\"name\": \"spdlog\""));
@@ -499,7 +520,10 @@ mod tests {
     #[test]
     fn build_vcpkg_manifest_with_pin() {
         let manifest = build_vcpkg_manifest_multi(
-            &[VcpkgPackageSpec { name: "spdlog", version: Some("1.14") }],
+            &[VcpkgPackageSpec {
+                name: "spdlog",
+                version: Some("1.14"),
+            }],
             Some("abc123"),
         );
         assert!(manifest.contains("\"name\": \"spdlog\""));
@@ -511,7 +535,10 @@ mod tests {
     #[test]
     fn build_vcpkg_manifest_with_range() {
         let manifest = build_vcpkg_manifest_multi(
-            &[VcpkgPackageSpec { name: "spdlog", version: Some(">=1.14") }],
+            &[VcpkgPackageSpec {
+                name: "spdlog",
+                version: Some(">=1.14"),
+            }],
             Some("abc123"),
         );
         assert!(manifest.contains("\"version>=\": \"1.14.0\""));
@@ -522,8 +549,14 @@ mod tests {
     fn build_vcpkg_manifest_multi_packages() {
         let manifest = build_vcpkg_manifest_multi(
             &[
-                VcpkgPackageSpec { name: "fmt", version: Some("11") },
-                VcpkgPackageSpec { name: "raylib", version: None },
+                VcpkgPackageSpec {
+                    name: "fmt",
+                    version: Some("11"),
+                },
+                VcpkgPackageSpec {
+                    name: "raylib",
+                    version: None,
+                },
             ],
             Some("abc123"),
         );
@@ -575,7 +608,10 @@ mod tests {
         std::fs::write(lib_dir.join("libspdlog.a"), b"").unwrap();
 
         let runner = MockRunner::new();
-        runner.on("vcpkg", MockRunner::success_output("spdlog:arm64-osx 1.14.1\n"));
+        runner.on(
+            "vcpkg",
+            MockRunner::success_output("spdlog:arm64-osx 1.14.1\n"),
+        );
 
         let provider = VcpkgProvider::with_runner_and_root(Box::new(runner), root);
 
@@ -602,7 +638,10 @@ mod tests {
         std::fs::write(lib_dir.join("libz.a"), b"").unwrap();
 
         let runner = MockRunner::new();
-        runner.on("vcpkg", MockRunner::success_output("zlib:arm64-osx 1.3.1\n"));
+        runner.on(
+            "vcpkg",
+            MockRunner::success_output("zlib:arm64-osx 1.3.1\n"),
+        );
 
         let provider = VcpkgProvider::with_runner_and_root(Box::new(runner), root);
 
@@ -636,7 +675,9 @@ mod tests {
         std::fs::create_dir_all(root.join("installed").join(triplet)).unwrap();
 
         let provider = VcpkgProvider::new();
-        let err = provider.parse_installed(root, "missing", triplet).unwrap_err();
+        let err = provider
+            .parse_installed(root, "missing", triplet)
+            .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("no headers or libraries found"), "got: {msg}");
     }

@@ -16,7 +16,13 @@ impl Compiler for GccCompiler {
         "g++"
     }
 
-    fn compile_args(&self, src: &Path, obj: &Path, depfile: &Path, flags: &CompileFlags) -> Vec<String> {
+    fn compile_args(
+        &self,
+        src: &Path,
+        obj: &Path,
+        depfile: &Path,
+        flags: &CompileFlags,
+    ) -> Vec<String> {
         let mut args = vec!["-c".to_string()];
 
         if let Some(std) = flags.cpp_standard {

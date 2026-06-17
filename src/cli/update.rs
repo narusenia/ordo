@@ -2,7 +2,7 @@ use crate::core::lockfile::LockFile;
 use crate::core::manifest::Manifest;
 use crate::core::resolver::resolve_dependencies;
 use crate::util::style;
-use miette::{bail, Result};
+use miette::{Result, bail};
 use std::path::Path;
 
 pub fn run(dir: &Path, name: Option<&str>) -> Result<()> {
@@ -57,21 +57,21 @@ pub fn run(dir: &Path, name: Option<&str>) -> Result<()> {
                 }
             }
         }
-        style::success(
-            "Finished",
-            &format!(
-                "{} package(s) changed",
-                changes.len()
-            ),
-        );
+        style::success("Finished", &format!("{} package(s) changed", changes.len()));
     }
 
     Ok(())
 }
 
 enum Change {
-    Added { name: String, version: String },
-    Removed { name: String, version: String },
+    Added {
+        name: String,
+        version: String,
+    },
+    Removed {
+        name: String,
+        version: String,
+    },
     Updated {
         name: String,
         old_version: String,

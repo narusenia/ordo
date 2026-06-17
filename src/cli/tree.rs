@@ -23,7 +23,9 @@ pub fn run(dir: &Path) -> Result<()> {
         return Ok(());
     }
 
+    let spinner = style::create_spinner("Fetching dependency info…");
     let fetched = fetch_all_for_tree(&manifest, dir);
+    spinner.finish_and_clear();
 
     let deps: Vec<_> = manifest.dependencies.iter().collect();
     let last_idx = deps.len() - 1;
@@ -49,10 +51,10 @@ pub fn run(dir: &Path) -> Result<()> {
 
         if let Some(dep) = fetched.get(name.as_str()) {
             if !dep.libs.is_empty() {
-                style::tree_line(&format!("{cont}libs: {}", dep.libs.join(", ")));
+                style::tree_detail(cont, &format!("libs: {}", dep.libs.join(", ")));
             }
             if !dep.frameworks.is_empty() {
-                style::tree_line(&format!("{cont}frameworks: {}", dep.frameworks.join(", ")));
+                style::tree_detail(cont, &format!("frameworks: {}", dep.frameworks.join(", ")));
             }
             if !dep.include_dirs.is_empty() {
                 let dirs: Vec<String> = dep
@@ -60,7 +62,7 @@ pub fn run(dir: &Path) -> Result<()> {
                     .iter()
                     .map(|p| p.display().to_string())
                     .collect();
-                style::tree_line(&format!("{cont}include: {}", dirs.join(", ")));
+                style::tree_detail(cont, &format!("include: {}", dirs.join(", ")));
             }
         }
     }

@@ -7,23 +7,79 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  MISE_EXPERIMENTAL: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
+  fmt:
+    name: rustfmt
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - run: rustup component add rustfmt
+      - run: mise run fmt
 
-      - uses: jdx/mise-action@v2
-
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy
+          cache-bin: false
+      - run: rustup component add clippy
+      - run: mise run clippy
 
-      - name: Check
-        run: cargo check
+  test:
+    name: test / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.os }}
+          cache-bin: false
+      - run: mise run check
+      - run: mise run test
+      - run: mise run build
 
-      - name: Clippy
-        run: cargo clippy -- -D warnings
+  docs:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: docs
+          cache-bin: false
+      - run: mise run doc
 
-      - name: Test
-        run: cargo test
+  ci:
+    name: ci
+    needs: [fmt, clippy, test, docs]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summarize required job outcomes
+        run: |
+          if [[ "${{ needs.fmt.result }}" != "success" \
+             || "${{ needs.clippy.result }}" != "success" \
+             || "${{ needs.test.result }}" != "success" \
+             || "${{ needs.docs.result }}" != "success" ]]; then
+            echo "::error::one or more required jobs failed"
+            exit 1
+          fi

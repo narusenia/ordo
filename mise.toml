@@ -1,5 +1,5 @@
 [tools]
-rust = "1.95"
+rust = { version = "1.95", components = "rustfmt,clippy,rust-src" }
 
 [tasks.build]
 description = "Build the project"
@@ -18,8 +18,16 @@ description = "Run clippy lints"
 run = "cargo clippy -- -D warnings"
 
 [tasks.fmt]
+description = "Check code formatting"
+run = "cargo fmt --check"
+
+[tasks."fmt:fix"]
 description = "Format code"
 run = "cargo fmt"
+
+[tasks.doc]
+description = "Build documentation"
+run = "cargo doc --no-deps --document-private-items"
 
 [tasks.dev]
 description = "Run ordo CLI in debug mode"

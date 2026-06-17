@@ -173,6 +173,10 @@ pub enum Command {
         /// Provider (pkg-config, system, vcpkg, conan, path, git). Interactive if omitted.
         #[arg(short, long)]
         provider: Option<String>,
+
+        /// Skip provider verification (don't check if the package exists)
+        #[arg(long)]
+        no_verify: bool,
     },
 
     /// Update dependencies

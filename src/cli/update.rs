@@ -28,7 +28,7 @@ pub fn run(dir: &Path, name: Option<&str>, ctx: &Context) -> Result<()> {
 
     let old_lock = LockFile::load(&lock_path).ok();
 
-    let resolved = resolve_dependencies(&manifest)?;
+    let resolved = resolve_dependencies(&manifest, None)?;
     let new_lock = LockFile::new(&resolved);
 
     let changes = diff_locks(old_lock.as_ref(), &new_lock, name);

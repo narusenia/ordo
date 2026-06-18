@@ -326,9 +326,9 @@ fn resolve_and_fetch(
     };
     let cache_path = cache_dir.join(DEP_CACHE_FILE);
 
-    let resolved = resolve_dependencies(manifest)?;
-
     let existing_lock = LockFile::load(&lock_path).ok();
+    let resolved = resolve_dependencies(manifest, existing_lock.as_ref())?;
+
     let is_fresh = existing_lock
         .as_ref()
         .is_some_and(|lock| lock.is_fresh(&resolved));

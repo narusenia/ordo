@@ -1,11 +1,12 @@
 use crate::core::lockfile::LockFile;
 use crate::core::manifest::Manifest;
 use crate::core::resolver::resolve_dependencies;
-use crate::util::style;
 use miette::{Result, bail};
 use std::path::Path;
 
-pub fn run(dir: &Path, name: Option<&str>, _ctx: &super::context::Context) -> Result<()> {
+use super::context::Context;
+
+pub fn run(dir: &Path, name: Option<&str>, ctx: &Context) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
@@ -15,7 +16,7 @@ pub fn run(dir: &Path, name: Option<&str>, _ctx: &super::context::Context) -> Re
     let manifest = Manifest::load(&manifest_path)?;
 
     if manifest.dependencies.is_empty() {
-        style::success("Updated", "no dependencies to update");
+        ctx.style.success("Updated", "no dependencies to update");
         return Ok(());
     }
 
@@ -35,29 +36,30 @@ pub fn run(dir: &Path, name: Option<&str>, _ctx: &super::context::Context) -> Re
     new_lock.save(&lock_path)?;
 
     if changes.is_empty() {
-        style::success("Updated", "already up to date");
+        ctx.style.success("Updated", "already up to date");
     } else {
         for change in &changes {
             match change {
                 Change::Added { name, version } => {
-                    style::success("Added", &format!("{name} v{version}"));
+                    ctx.style.success("Added", &format!("{name} v{version}"));
                 }
                 Change::Removed { name, version } => {
-                    style::warn("Removed", &format!("{name} v{version}"));
+                    ctx.style.warn("Removed", &format!("{name} v{version}"));
                 }
                 Change::Updated {
                     name,
                     old_version,
                     new_version,
                 } => {
-                    style::success(
+                    ctx.style.success(
                         "Updated",
                         &format!("{name} v{old_version} → v{new_version}"),
                     );
                 }
             }
         }
-        style::success("Finished", &format!("{} package(s) changed", changes.len()));
+        ctx.style
+            .success("Finished", &format!("{} package(s) changed", changes.len()));
     }
 
     Ok(())

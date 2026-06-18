@@ -13,7 +13,6 @@ use crate::core::manifest::{
 };
 use crate::core::resolver::resolve_dependencies;
 use crate::core::workspace::Workspace;
-use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
 use std::fs;
@@ -54,7 +53,7 @@ pub struct BuildContext {
     pub building: HashSet<PathBuf>,
 }
 
-pub fn run(opts: &BuildOptions, _ctx: &Context) -> Result<BuildResult> {
+pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let canonical = fs::canonicalize(&project_root).into_diagnostic()?;
     let profile_name = resolve_profile_name(opts);
@@ -67,11 +66,11 @@ pub fn run(opts: &BuildOptions, _ctx: &Context) -> Result<BuildResult> {
     let manifest = Manifest::load(&manifest_path)?;
 
     if manifest.is_workspace() {
-        return run_workspace_build(opts, &project_root, &profile_name);
+        return run_workspace_build(opts, &project_root, &profile_name, ctx);
     }
 
     let target_dir = project_root.join("target");
-    let mut ctx = BuildContext {
+    let mut bctx = BuildContext {
         project_root,
         workspace_root: None,
         target_dir,
@@ -85,13 +84,14 @@ pub fn run(opts: &BuildOptions, _ctx: &Context) -> Result<BuildResult> {
         building: HashSet::from([canonical]),
     };
 
-    build_project(&mut ctx)
+    build_project(&mut bctx, ctx)
 }
 
 fn run_workspace_build(
     opts: &BuildOptions,
     root_dir: &Path,
     profile_name: &str,
+    ctx: &Context,
 ) -> Result<BuildResult> {
     let ws = Workspace::load(root_dir)?;
     let dag = ws.build_dag()?;
@@ -126,7 +126,7 @@ fn run_workspace_build(
     for member_name in &members_to_build {
         if member_name == "__root__" {
             let canonical = fs::canonicalize(root_dir).into_diagnostic()?;
-            let mut ctx = BuildContext {
+            let mut bctx = BuildContext {
                 project_root: root_dir.to_path_buf(),
                 workspace_root: Some(ws_root.clone()),
                 target_dir: ws_target_dir.clone(),
@@ -139,7 +139,7 @@ fn run_workspace_build(
                 frozen: opts.frozen,
                 building: HashSet::from([canonical]),
             };
-            last_result = Some(build_project(&mut ctx)?);
+            last_result = Some(build_project(&mut bctx, ctx)?);
             continue;
         }
 
@@ -147,9 +147,9 @@ fn run_workspace_build(
         let member_dir = &member.dir;
         let canonical = fs::canonicalize(member_dir).into_diagnostic()?;
 
-        style::header(member_name);
+        ctx.style.header(member_name);
 
-        let mut ctx = BuildContext {
+        let mut bctx = BuildContext {
             project_root: member_dir.clone(),
             workspace_root: Some(ws_root.clone()),
             target_dir: ws_target_dir.clone(),
@@ -163,13 +163,13 @@ fn run_workspace_build(
             building: HashSet::from([canonical]),
         };
 
-        last_result = Some(build_project(&mut ctx)?);
+        last_result = Some(build_project(&mut bctx, ctx)?);
     }
 
     last_result.ok_or_else(|| miette::miette!("no members to build"))
 }
 
-fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
+fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     let manifest_path = ctx.project_root.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in {}", ctx.project_root.display());
@@ -214,7 +214,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
         bail!("no source files found in {}", src_dir.display());
     }
 
-    let fetched_deps = resolve_and_fetch(&manifest, ctx)?;
+    let fetched_deps = resolve_and_fetch(&manifest, ctx, ui)?;
     let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
     let link_flags = build_link_flags(&fetched_deps);
 
@@ -239,7 +239,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     .into_diagnostic()?;
 
     let start = Instant::now();
-    invoke_ninja(&build_dir, ctx.jobs, ctx.verbose)?;
+    invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
     let elapsed = start.elapsed();
 
     let output_path = resolve_output_path(
@@ -253,7 +253,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
     } else {
         "unoptimized + debuginfo"
     };
-    style::success(
+    ui.style.success(
         "Finished",
         &format!(
             "`{}` profile [{profile_desc}] in {:.2}s",
@@ -261,7 +261,7 @@ fn build_project(ctx: &mut BuildContext) -> Result<BuildResult> {
             elapsed.as_secs_f64()
         ),
     );
-    style::meta(&format!("→ {}", output_path.display()));
+    ui.style.meta(&format!("→ {}", output_path.display()));
 
     Ok(BuildResult {
         output_path,
@@ -287,7 +287,11 @@ fn auto_detect_compiler() -> CompilerKind {
 
 const DEP_CACHE_FILE: &str = ".dep-cache.json";
 
-fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<FetchedDep>> {
+fn resolve_and_fetch(
+    manifest: &Manifest,
+    ctx: &mut BuildContext,
+    ui: &Context,
+) -> Result<Vec<FetchedDep>> {
     if manifest.dependencies.is_empty() {
         return Ok(Vec::new());
     }
@@ -323,7 +327,7 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
 
     if is_fresh && !ctx.no_cache {
         if let Ok(cached) = load_dep_cache(&cache_path) {
-            style::success(
+            ui.style.success(
                 "Resolved",
                 &format!("{} dependencies (cached)", cached.len()),
             );
@@ -342,7 +346,7 @@ fn resolve_and_fetch(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<
         );
     }
 
-    let fetched = fetch_dependencies(manifest, ctx)?;
+    let fetched = fetch_dependencies(manifest, ctx, ui)?;
 
     let mut lock = LockFile::load(&lock_path).unwrap_or(LockFile {
         version: 1,
@@ -406,7 +410,11 @@ fn save_dep_cache(path: &Path, deps: &[FetchedDep]) -> Result<()> {
     fs::write(path, content).into_diagnostic()
 }
 
-fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec<FetchedDep>> {
+fn fetch_dependencies(
+    manifest: &Manifest,
+    ctx: &mut BuildContext,
+    ui: &Context,
+) -> Result<Vec<FetchedDep>> {
     let mut fetched = Vec::new();
 
     // Pass 1: batch-install all vcpkg deps in one manifest
@@ -421,7 +429,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
         .collect();
 
     if !vcpkg_deps.is_empty() {
-        let sw = style::create_spinner_with_detail(&format!(
+        let sw = ui.style.create_spinner_with_detail(&format!(
             "Installing {} vcpkg package(s)…",
             vcpkg_deps.len()
         ));
@@ -445,11 +453,13 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
     for (name, spec) in &manifest.dependencies {
         let dep = match spec.source_kind() {
             DependencySource::Provider(ProviderKind::PkgConfig) => {
-                let spinner = style::create_spinner(&format!("Resolving {name} (pkg-config)…"));
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Resolving {name} (pkg-config)…"));
                 let provider = PkgConfigProvider;
                 match provider.resolve(name, spec.version.as_deref()) {
                     Ok(resolved) => {
-                        style::finish_spinner_success(
+                        ui.style.finish_spinner_success(
                             &spinner,
                             "Resolved",
                             &format!("{name} v{} (pkg-config)", resolved.version),
@@ -457,7 +467,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(
+                        ui.style.finish_spinner_error(
                             &spinner,
                             "Failed",
                             &format!("{name} (pkg-config)"),
@@ -467,11 +477,13 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 }
             }
             DependencySource::Provider(ProviderKind::System) => {
-                let spinner = style::create_spinner(&format!("Resolving {name} (system)…"));
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Resolving {name} (system)…"));
                 let provider = SystemProvider;
                 match provider.resolve(name, spec.version.as_deref()) {
                     Ok(resolved) => {
-                        style::finish_spinner_success(
+                        ui.style.finish_spinner_success(
                             &spinner,
                             "Resolved",
                             &format!("{name} (system)"),
@@ -479,7 +491,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
-                        style::finish_spinner_error(
+                        ui.style.finish_spinner_error(
                             &spinner,
                             "Failed",
                             &format!("{name} (system)"),
@@ -489,7 +501,9 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 }
             }
             DependencySource::Provider(ProviderKind::Vcpkg) => {
-                let spinner = style::create_spinner(&format!("Resolving {name} (vcpkg)…"));
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Resolving {name} (vcpkg)…"));
                 let provider = VcpkgProvider::new();
                 let root = provider.vcpkg_root()?;
                 let triplet = VcpkgProvider::host_triplet();
@@ -501,7 +515,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                 };
                 match provider.fetch(&resolved) {
                     Ok(dep) => {
-                        style::finish_spinner_success(
+                        ui.style.finish_spinner_success(
                             &spinner,
                             "Resolved",
                             &format!("{name} v{version} (vcpkg)"),
@@ -509,13 +523,19 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                         dep
                     }
                     Err(e) => {
-                        style::finish_spinner_error(&spinner, "Failed", &format!("{name} (vcpkg)"));
+                        ui.style.finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (vcpkg)"),
+                        );
                         return Err(e);
                     }
                 }
             }
             DependencySource::Provider(ProviderKind::Conan) => {
-                let sw = style::create_spinner_with_detail(&format!("Resolving {name} (conan)…"));
+                let sw = ui
+                    .style
+                    .create_spinner_with_detail(&format!("Resolving {name} (conan)…"));
                 let provider = ConanProvider::new();
                 let on_progress = |msg: &str| {
                     sw.set_detail(msg);
@@ -542,7 +562,9 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                     spec.branch.as_deref(),
                     spec.rev.as_deref(),
                 );
-                let sw = style::create_spinner_with_detail(&format!("Fetching {name} (git)…"));
+                let sw = ui
+                    .style
+                    .create_spinner_with_detail(&format!("Fetching {name} (git)…"));
                 let provider = GitProvider::new();
                 let on_progress = |msg: &str| {
                     sw.set_detail(msg);
@@ -554,9 +576,9 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
                         let script_root =
                             ctx.workspace_root.as_deref().unwrap_or(&ctx.project_root);
                         if script.is_some() {
-                            let bw = style::create_spinner_with_detail(&format!(
-                                "Building {name} (lua)…"
-                            ));
+                            let bw = ui
+                                .style
+                                .create_spinner_with_detail(&format!("Building {name} (lua)…"));
                             let on_lua_progress = |msg: &str| {
                                 bw.set_detail(msg);
                             };
@@ -595,7 +617,7 @@ fn fetch_dependencies(manifest: &Manifest, ctx: &mut BuildContext) -> Result<Vec
             DependencySource::Path => {
                 let rel_path = spec.path.as_ref().unwrap();
                 let dep_dir = ctx.project_root.join(rel_path);
-                fetch_path_dep(name, &dep_dir, ctx)?
+                fetch_path_dep(name, &dep_dir, ctx, ui)?
             }
             _ => continue,
         };
@@ -641,7 +663,12 @@ fn build_compile_flags(
     }
 }
 
-fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<FetchedDep> {
+fn fetch_path_dep(
+    name: &str,
+    dep_dir: &Path,
+    ctx: &mut BuildContext,
+    ui: &Context,
+) -> Result<FetchedDep> {
     if !dep_dir.exists() {
         bail!(
             "path dependency '{}' points to '{}' which does not exist",
@@ -679,7 +706,8 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
     let has_sources = src_dir.exists() && !discover_sources(&src_dir)?.is_empty();
 
     if !has_sources {
-        style::success("Resolved", &format!("{name} (path, header-only)"));
+        ui.style
+            .success("Resolved", &format!("{name} (path, header-only)"));
         return Ok(FetchedDep {
             name: name.to_string(),
             include_dirs,
@@ -693,7 +721,7 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
     ctx.project_root = dep_dir.to_path_buf();
     ctx.building.insert(canonical_dep.clone());
 
-    let build_result = build_project(ctx);
+    let build_result = build_project(ctx, ui);
 
     ctx.project_root = parent_root;
     ctx.building.remove(&canonical_dep);
@@ -725,7 +753,7 @@ fn fetch_path_dep(name: &str, dep_dir: &Path, ctx: &mut BuildContext) -> Result<
         }
     }
 
-    style::success("Built", &format!("{name} (path)"));
+    ui.style.success("Built", &format!("{name} (path)"));
 
     Ok(FetchedDep {
         name: name.to_string(),
@@ -826,7 +854,7 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
-fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()> {
+fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context) -> Result<()> {
     let mut cmd = Command::new("ninja");
     cmd.arg("-C").arg(build_dir);
 
@@ -850,7 +878,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
         reader.lines().map_while(Result::ok).collect::<Vec<_>>()
     });
 
-    let spinner = style::create_spinner("");
+    let spinner = ui.style.create_spinner("");
     let mut had_progress = false;
     let mut output_lines: Vec<String> = Vec::new();
     let mut prev_desc = String::new();
@@ -877,7 +905,8 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
             if parsed.current > 1 {
                 spinner.finish_and_clear();
-                style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
+                ui.style
+                    .success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
             }
 
             prev_desc = desc.clone();
@@ -898,9 +927,11 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
 
     if had_progress {
         if status.success() {
-            style::success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
+            ui.style
+                .success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
         } else {
-            style::error("Failed", &format!("{prev_desc} {prev_progress}"));
+            ui.style
+                .error("Failed", &format!("{prev_desc} {prev_progress}"));
         }
     }
 
@@ -912,7 +943,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8) -> Result<()>
         for line in &stderr_lines {
             eprintln!("  {line}");
         }
-        style::error("Build failed", "");
+        ui.style.error("Build failed", "");
         bail!(
             "build failed (ninja exit code: {})",
             status.code().unwrap_or(-1)
@@ -1021,6 +1052,7 @@ mod tests {
 
     #[test]
     fn fetch_path_dep_missing_dir() {
+        let ui = Context::default_for_test();
         let mut ctx = BuildContext {
             project_root: PathBuf::from("/tmp"),
             workspace_root: None,
@@ -1034,7 +1066,7 @@ mod tests {
             frozen: false,
             building: HashSet::new(),
         };
-        let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx);
+        let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("does not exist"), "got: {msg}");
@@ -1042,6 +1074,7 @@ mod tests {
 
     #[test]
     fn fetch_path_dep_missing_manifest() {
+        let ui = Context::default_for_test();
         let tmp = TempDir::new().unwrap();
         let mut ctx = BuildContext {
             project_root: tmp.path().to_path_buf(),
@@ -1056,7 +1089,7 @@ mod tests {
             frozen: false,
             building: HashSet::new(),
         };
-        let result = fetch_path_dep("mylib", tmp.path(), &mut ctx);
+        let result = fetch_path_dep("mylib", tmp.path(), &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("no Ordo.toml"), "got: {msg}");
@@ -1091,7 +1124,8 @@ type = "static-library"
             frozen: false,
             building: HashSet::from([canonical]),
         };
-        let result = fetch_path_dep("mylib", &dep_dir, &mut ctx);
+        let ui = Context::default_for_test();
+        let result = fetch_path_dep("mylib", &dep_dir, &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("circular"), "got: {msg}");
@@ -1127,7 +1161,8 @@ type = "static-library"
             frozen: false,
             building: HashSet::new(),
         };
-        let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx).unwrap();
+        let ui = Context::default_for_test();
+        let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx, &ui).unwrap();
         assert_eq!(dep.name, "myheader");
         assert_eq!(dep.include_dirs.len(), 1);
         assert!(dep.include_dirs[0].ends_with("include"));

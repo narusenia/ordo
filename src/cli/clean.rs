@@ -1,11 +1,10 @@
 use super::context::Context;
 use crate::core::manifest::Manifest;
-use crate::util::style;
 use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 
-pub fn run(cache: bool, _ctx: &Context) -> Result<()> {
+pub fn run(cache: bool, ctx: &Context) -> Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
     let manifest_path = cwd.join("Ordo.toml");
 
@@ -14,33 +13,34 @@ pub fn run(cache: bool, _ctx: &Context) -> Result<()> {
         let size = dir_size(&target);
         fs::remove_dir_all(&target).into_diagnostic()?;
         let size_str = format_size(size);
-        style::success("Removed", &format!("target/ ({size_str} freed)"));
+        ctx.style
+            .success("Removed", &format!("target/ ({size_str} freed)"));
     } else {
-        style::skip("Nothing to clean", "target/");
+        ctx.style.skip("Nothing to clean", "target/");
     }
 
     if manifest_path.exists() {
         let lock_path = cwd.join("Ordo.lock");
         if lock_path.exists() {
             fs::remove_file(&lock_path).into_diagnostic()?;
-            style::success("Removed", "Ordo.lock");
+            ctx.style.success("Removed", "Ordo.lock");
         }
 
         if let Ok(manifest) = Manifest::load(&manifest_path)
             && manifest.is_workspace()
         {
-            clean_workspace_member_artifacts(&cwd);
+            clean_workspace_member_artifacts(&cwd, ctx);
         }
     }
 
     if cache {
-        clear_external_cache();
+        clear_external_cache(ctx);
     }
 
     Ok(())
 }
 
-fn clean_workspace_member_artifacts(root: &Path) {
+fn clean_workspace_member_artifacts(root: &Path, ctx: &Context) {
     use crate::core::workspace::Workspace;
 
     let Ok(ws) = Workspace::load(root) else {
@@ -65,7 +65,7 @@ fn clean_workspace_member_artifacts(root: &Path) {
     }
 
     if cleaned > 0 {
-        style::success(
+        ctx.style.success(
             "Removed",
             &format!("member artifacts ({} freed)", format_size(cleaned)),
         );
@@ -103,7 +103,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn clear_external_cache() {
+fn clear_external_cache(ctx: &Context) {
     if let Ok(status) = std::process::Command::new("sccache")
         .arg("--stop-server")
         .stdout(std::process::Stdio::null())
@@ -111,7 +111,7 @@ fn clear_external_cache() {
         .status()
         && status.success()
     {
-        style::success("Stopped", "sccache server");
+        ctx.style.success("Stopped", "sccache server");
         return;
     }
 
@@ -122,6 +122,6 @@ fn clear_external_cache() {
         .status()
         && status.success()
     {
-        style::success("Cleared", "ccache");
+        ctx.style.success("Cleared", "ccache");
     }
 }

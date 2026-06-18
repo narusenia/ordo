@@ -1,19 +1,26 @@
 use super::{ColorMode, StyleMode};
 use crate::core::manifest::Manifest;
+use crate::util::style::{DefaultStyle, StyleOutput};
 
 #[allow(dead_code)]
 pub struct Context {
-    pub style: StyleMode,
+    pub style: Box<dyn StyleOutput>,
     pub verbose: u8,
     pub color: ColorMode,
 }
 
 impl Context {
     pub fn resolve(cli_style: StyleMode, cli_verbose: u8, cli_color: ColorMode) -> Self {
-        let style = if cli_style != StyleMode::Default {
+        let style_mode = if cli_style != StyleMode::Default {
             cli_style
         } else {
             Self::style_from_manifest().unwrap_or(StyleMode::Default)
+        };
+
+        let style: Box<dyn StyleOutput> = match style_mode {
+            StyleMode::Default => Box::new(DefaultStyle),
+            StyleMode::Minimal => Box::new(DefaultStyle),
+            StyleMode::CargoLike => Box::new(DefaultStyle),
         };
 
         Self {
@@ -26,7 +33,7 @@ impl Context {
     #[cfg(test)]
     pub fn default_for_test() -> Self {
         Self {
-            style: StyleMode::Default,
+            style: Box::new(DefaultStyle),
             verbose: 0,
             color: ColorMode::Auto,
         }

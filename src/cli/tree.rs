@@ -4,11 +4,12 @@ use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use crate::backend::provider::{FetchedDep, Provider};
 use crate::core::manifest::{DependencySource, Manifest, ProviderKind};
-use crate::util::style;
 use miette::{Result, bail};
 use std::path::Path;
 
-pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
+use super::context::Context;
+
+pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
@@ -17,18 +18,18 @@ pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
     let manifest = Manifest::load(&manifest_path)?;
 
     if manifest.is_workspace() {
-        return run_workspace_tree(dir, &manifest);
+        return run_workspace_tree(dir, &manifest, ctx);
     }
 
     let pkg = manifest.package();
     eprintln!("{} v{}", pkg.name, pkg.version);
 
     if manifest.dependencies.is_empty() {
-        style::meta("no dependencies");
+        ctx.style.meta("no dependencies");
         return Ok(());
     }
 
-    let spinner = style::create_spinner("Fetching dependency info…");
+    let spinner = ctx.style.create_spinner("Fetching dependency info…");
     let fetched = fetch_all_for_tree(&manifest, dir);
     spinner.finish_and_clear();
 
@@ -56,10 +57,12 @@ pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
 
         if let Some(dep) = fetched.get(name.as_str()) {
             if !dep.libs.is_empty() {
-                style::tree_detail(cont, &format!("libs: {}", dep.libs.join(", ")));
+                ctx.style
+                    .tree_detail(cont, &format!("libs: {}", dep.libs.join(", ")));
             }
             if !dep.frameworks.is_empty() {
-                style::tree_detail(cont, &format!("frameworks: {}", dep.frameworks.join(", ")));
+                ctx.style
+                    .tree_detail(cont, &format!("frameworks: {}", dep.frameworks.join(", ")));
             }
             if !dep.include_dirs.is_empty() {
                 let dirs: Vec<String> = dep
@@ -67,7 +70,8 @@ pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
                     .iter()
                     .map(|p| p.display().to_string())
                     .collect();
-                style::tree_detail(cont, &format!("include: {}", dirs.join(", ")));
+                ctx.style
+                    .tree_detail(cont, &format!("include: {}", dirs.join(", ")));
             }
         }
     }
@@ -75,7 +79,7 @@ pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
     Ok(())
 }
 
-fn run_workspace_tree(dir: &Path, manifest: &Manifest) -> Result<()> {
+fn run_workspace_tree(dir: &Path, manifest: &Manifest, ctx: &Context) -> Result<()> {
     use crate::core::workspace::Workspace;
 
     let ws = Workspace::load(dir)?;
@@ -101,7 +105,8 @@ fn run_workspace_tree(dir: &Path, manifest: &Manifest) -> Result<()> {
 
         let deps: Vec<String> = dag.deps_of(name).to_vec();
         if !deps.is_empty() {
-            style::tree_detail(cont, &format!("deps: {}", deps.join(", ")));
+            ctx.style
+                .tree_detail(cont, &format!("deps: {}", deps.join(", ")));
         }
 
         if !member.manifest.dependencies.is_empty() {
@@ -113,7 +118,8 @@ fn run_workspace_tree(dir: &Path, manifest: &Manifest) -> Result<()> {
                 .map(|(n, _)| n.as_str())
                 .collect();
             if !ext_deps.is_empty() {
-                style::tree_detail(cont, &format!("ext: {}", ext_deps.join(", ")));
+                ctx.style
+                    .tree_detail(cont, &format!("ext: {}", ext_deps.join(", ")));
             }
         }
     }
@@ -127,7 +133,6 @@ fn fetch_all_for_tree(
 ) -> std::collections::HashMap<String, FetchedDep> {
     let mut result = std::collections::HashMap::new();
 
-    // Batch vcpkg install first
     let vcpkg_deps: Vec<VcpkgPackageSpec<'_>> = manifest
         .dependencies
         .iter()

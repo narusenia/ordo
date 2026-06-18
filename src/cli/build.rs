@@ -140,11 +140,15 @@ fn run_workspace_build(
                 no_cache: opts.no_cache,
                 locked: opts.locked,
                 frozen: opts.frozen,
-                building: HashSet::from([canonical]),
+                building: HashSet::from([canonical.clone()]),
                 built_deps: std::mem::take(&mut built_deps),
             };
             last_result = Some(build_project(&mut bctx, ctx)?);
             built_deps = std::mem::take(&mut bctx.built_deps);
+            if let Some(dep) = collect_member_as_fetched_dep(root_dir, &ws_target_dir, profile_name)
+            {
+                built_deps.insert(canonical, dep);
+            }
             continue;
         }
 
@@ -165,12 +169,16 @@ fn run_workspace_build(
             no_cache: opts.no_cache,
             locked: opts.locked,
             frozen: opts.frozen,
-            building: HashSet::from([canonical]),
+            building: HashSet::from([canonical.clone()]),
             built_deps: std::mem::take(&mut built_deps),
         };
 
         last_result = Some(build_project(&mut bctx, ctx)?);
         built_deps = std::mem::take(&mut bctx.built_deps);
+
+        if let Some(dep) = collect_member_as_fetched_dep(member_dir, &ws_target_dir, profile_name) {
+            built_deps.insert(canonical, dep);
+        }
     }
 
     last_result.ok_or_else(|| miette::miette!("no members to build"))
@@ -778,6 +786,44 @@ fn fetch_path_dep(
     ctx.built_deps.insert(canonical_dep, dep.clone());
 
     Ok(dep)
+}
+
+fn collect_member_as_fetched_dep(
+    member_dir: &Path,
+    target_dir: &Path,
+    profile_name: &str,
+) -> Option<FetchedDep> {
+    let manifest = Manifest::load(&member_dir.join("Ordo.toml")).ok()?;
+    let pkg = manifest.package.as_ref()?;
+    let pkg_name = &pkg.name;
+
+    let include_dir = member_dir.join("include");
+    let include_dirs = if include_dir.exists() {
+        vec![fs::canonicalize(&include_dir).ok()?]
+    } else {
+        vec![fs::canonicalize(member_dir).ok()?]
+    };
+
+    let output_dir = target_dir.join(profile_name).join(pkg_name);
+    let (mut lib_dirs, mut libs) = scan_library_artifacts(&output_dir);
+    let mut frameworks = Vec::new();
+
+    let dep_cache_path = output_dir.join(DEP_CACHE_FILE);
+    if let Ok(transitive) = load_dep_cache(&dep_cache_path) {
+        for t in &transitive {
+            lib_dirs.extend(t.lib_dirs.iter().cloned());
+            libs.extend(t.libs.iter().cloned());
+            frameworks.extend(t.frameworks.iter().cloned());
+        }
+    }
+
+    Some(FetchedDep {
+        name: pkg_name.clone(),
+        include_dirs,
+        lib_dirs,
+        libs,
+        frameworks,
+    })
 }
 
 fn scan_library_artifacts(output_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {

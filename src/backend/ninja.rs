@@ -168,7 +168,7 @@ impl<'a> NinjaGenerator<'a> {
             flags.push(format!("-std={}", std.as_flag()));
         }
 
-        flags.push(format!("-O{}", self.compile_flags.opt_level));
+        flags.push(format!("-O{}", self.compile_flags.opt_level.as_flag()));
 
         if self.compile_flags.debug {
             flags.push("-g".to_string());

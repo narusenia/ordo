@@ -1,4 +1,5 @@
-use super::{CompileFlags, Compiler, LinkFlags};
+use super::{CompileFlags, Compiler, LinkFlags, LtoMode, san_flag};
+use crate::core::manifest::WarningLevel;
 use std::path::{Path, PathBuf};
 
 pub struct ClangCompiler;
@@ -31,10 +32,53 @@ impl Compiler for ClangCompiler {
             args.push(format!("-std={}", std.as_flag()));
         }
 
-        args.push(format!("-O{}", flags.opt_level));
+        args.push(format!("-O{}", flags.opt_level.as_flag()));
 
         if flags.debug {
             args.push("-g".to_string());
+        }
+
+        if flags.split_debug {
+            args.push("-gsplit-dwarf".to_string());
+        }
+
+        if !flags.assertions {
+            args.push("-DNDEBUG".to_string());
+        }
+
+        for san in &flags.sanitize {
+            args.push(format!("-fsanitize={}", san_flag(san)));
+        }
+
+        if flags.pic {
+            args.push("-fPIC".to_string());
+        }
+
+        if flags.cpp_standard.is_some() {
+            if !flags.rtti {
+                args.push("-fno-rtti".to_string());
+            }
+            if !flags.exceptions {
+                args.push("-fno-exceptions".to_string());
+            }
+        }
+
+        match flags.warnings {
+            WarningLevel::Default => {}
+            WarningLevel::All => args.push("-Wall".to_string()),
+            WarningLevel::Extra => {
+                args.push("-Wall".to_string());
+                args.push("-Wextra".to_string());
+            }
+            WarningLevel::Error => {
+                args.push("-Wall".to_string());
+                args.push("-Wextra".to_string());
+                args.push("-Werror".to_string());
+            }
+        }
+
+        if flags.coverage {
+            args.push("--coverage".to_string());
         }
 
         for def in &flags.defines {
@@ -45,7 +89,6 @@ impl Compiler for ClangCompiler {
             args.push(format!("-I{}", inc.display()));
         }
 
-        // Depfile for incremental builds
         args.push("-MD".to_string());
         args.push("-MF".to_string());
         args.push(depfile.display().to_string());
@@ -62,6 +105,28 @@ impl Compiler for ClangCompiler {
 
         if let Some(linker) = flags.linker {
             args.push(format!("-fuse-ld={linker}"));
+        }
+
+        match flags.lto {
+            LtoMode::Off => {}
+            LtoMode::Thin => args.push("-flto=thin".to_string()),
+            LtoMode::Full => args.push("-flto".to_string()),
+        }
+
+        if flags.strip {
+            args.push("-s".to_string());
+        }
+
+        if flags.static_runtime {
+            args.push("-static".to_string());
+        }
+
+        for san in &flags.sanitize {
+            args.push(format!("-fsanitize={}", san_flag(san)));
+        }
+
+        if flags.coverage {
+            args.push("--coverage".to_string());
         }
 
         for dir in &flags.lib_dirs {
@@ -95,14 +160,14 @@ impl Compiler for ClangCompiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::manifest::CppStandard;
+    use crate::core::manifest::{CppStandard, OptLevel};
 
     #[test]
     fn compile_args_basic() {
         let c = ClangCompiler;
         let flags = CompileFlags {
             cpp_standard: Some(CppStandard::Cpp20),
-            opt_level: 0,
+            opt_level: OptLevel::O0,
             debug: true,
             ..CompileFlags::default()
         };
@@ -170,7 +235,7 @@ mod tests {
             linker: Some(crate::core::manifest::LinkerKind::Lld),
             libs: vec!["fmt".to_string()],
             lib_dirs: vec![PathBuf::from("/usr/local/lib")],
-            frameworks: Vec::new(),
+            ..LinkFlags::default()
         };
 
         let args = c.link_args(&[PathBuf::from("build/main.o")], Path::new("myapp"), &flags);

@@ -4,15 +4,34 @@ pub mod clang;
 pub mod gcc;
 pub mod msvc;
 
-use crate::core::manifest::{CStandard, CompilerKind, CppStandard, LinkerKind};
+use crate::core::manifest::{
+    CStandard, CompilerKind, CppStandard, LinkerKind, LtoMode, OptLevel, Sanitizer, WarningLevel,
+};
+
+pub fn san_flag(s: &Sanitizer) -> &'static str {
+    match s {
+        Sanitizer::Address => "address",
+        Sanitizer::Undefined => "undefined",
+        Sanitizer::Thread => "thread",
+        Sanitizer::Memory => "memory",
+    }
+}
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct CompileFlags {
     pub cpp_standard: Option<CppStandard>,
     pub c_standard: Option<CStandard>,
-    pub opt_level: u8,
+    pub opt_level: OptLevel,
     pub debug: bool,
+    pub assertions: bool,
+    pub sanitize: Vec<Sanitizer>,
+    pub pic: bool,
+    pub rtti: bool,
+    pub exceptions: bool,
+    pub warnings: WarningLevel,
+    pub coverage: bool,
+    pub split_debug: bool,
     pub defines: Vec<String>,
     pub include_dirs: Vec<PathBuf>,
 }
@@ -22,8 +41,16 @@ impl Default for CompileFlags {
         Self {
             cpp_standard: Some(CppStandard::Cpp20),
             c_standard: None,
-            opt_level: 0,
+            opt_level: OptLevel::O0,
             debug: true,
+            assertions: true,
+            sanitize: Vec::new(),
+            pic: false,
+            rtti: true,
+            exceptions: true,
+            warnings: WarningLevel::All,
+            coverage: false,
+            split_debug: false,
             defines: Vec::new(),
             include_dirs: Vec::new(),
         }
@@ -36,6 +63,11 @@ pub struct LinkFlags {
     pub libs: Vec<String>,
     pub frameworks: Vec<String>,
     pub linker: Option<LinkerKind>,
+    pub lto: LtoMode,
+    pub strip: bool,
+    pub static_runtime: bool,
+    pub sanitize: Vec<Sanitizer>,
+    pub coverage: bool,
 }
 
 pub trait Compiler {

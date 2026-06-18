@@ -18,6 +18,8 @@ pub struct Manifest {
     #[serde(default)]
     pub cli: Option<CliConfig>,
     #[serde(default)]
+    pub profile: std::collections::BTreeMap<String, ProfileConfig>,
+    #[serde(default)]
     pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
     #[serde(default)]
     pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
@@ -164,6 +166,285 @@ impl fmt::Display for LinkerKind {
             Self::Mold => write!(f, "mold"),
             Self::Gold => write!(f, "gold"),
             Self::Default => write!(f, "default"),
+        }
+    }
+}
+
+// --- Profile configuration ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptLevel {
+    O0,
+    O1,
+    O2,
+    O3,
+    Os,
+    Oz,
+}
+
+impl OptLevel {
+    pub fn as_flag(&self) -> &str {
+        match self {
+            Self::O0 => "0",
+            Self::O1 => "1",
+            Self::O2 => "2",
+            Self::O3 => "3",
+            Self::Os => "s",
+            Self::Oz => "z",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OptLevel {
+    fn deserialize<D>(deserializer: D) -> Result<OptLevel, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct V;
+
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = OptLevel;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("0, 1, 2, 3, \"s\", or \"z\"")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<OptLevel, E> {
+                match v {
+                    0 => Ok(OptLevel::O0),
+                    1 => Ok(OptLevel::O1),
+                    2 => Ok(OptLevel::O2),
+                    3 => Ok(OptLevel::O3),
+                    _ => Err(E::custom(format!("invalid opt-level: {v}"))),
+                }
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<OptLevel, E> {
+                if v >= 0 {
+                    self.visit_u64(v as u64)
+                } else {
+                    Err(E::custom(format!("invalid opt-level: {v}")))
+                }
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<OptLevel, E> {
+                match v {
+                    "0" => Ok(OptLevel::O0),
+                    "1" => Ok(OptLevel::O1),
+                    "2" => Ok(OptLevel::O2),
+                    "3" => Ok(OptLevel::O3),
+                    "s" => Ok(OptLevel::Os),
+                    "z" => Ok(OptLevel::Oz),
+                    _ => Err(E::custom(format!("invalid opt-level: \"{v}\""))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(V)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LtoMode {
+    Off,
+    Thin,
+    Full,
+}
+
+impl<'de> Deserialize<'de> for LtoMode {
+    fn deserialize<D>(deserializer: D) -> Result<LtoMode, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct V;
+
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = LtoMode;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("false, \"thin\", or \"full\"")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<LtoMode, E> {
+                if v {
+                    Ok(LtoMode::Full)
+                } else {
+                    Ok(LtoMode::Off)
+                }
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<LtoMode, E> {
+                match v {
+                    "false" | "off" => Ok(LtoMode::Off),
+                    "thin" => Ok(LtoMode::Thin),
+                    "full" | "true" => Ok(LtoMode::Full),
+                    _ => Err(E::custom(format!("invalid lto mode: \"{v}\""))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(V)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WarningLevel {
+    Default,
+    All,
+    Extra,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Sanitizer {
+    Address,
+    Undefined,
+    Thread,
+    Memory,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ProfileConfig {
+    pub inherits: Option<String>,
+    pub opt_level: Option<OptLevel>,
+    pub debug: Option<bool>,
+    pub assertions: Option<bool>,
+    pub sanitize: Option<Vec<Sanitizer>>,
+    pub lto: Option<LtoMode>,
+    pub strip: Option<bool>,
+    pub pic: Option<bool>,
+    pub rtti: Option<bool>,
+    pub exceptions: Option<bool>,
+    pub warnings: Option<WarningLevel>,
+    pub linker: Option<String>,
+    pub static_runtime: Option<bool>,
+    pub coverage: Option<bool>,
+    pub split_debug: Option<bool>,
+    pub pch: Option<String>,
+    pub unity: Option<bool>,
+    pub parallel: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Profile {
+    pub opt_level: OptLevel,
+    pub debug: bool,
+    pub assertions: bool,
+    pub sanitize: Vec<Sanitizer>,
+    pub lto: LtoMode,
+    pub strip: bool,
+    pub pic: bool,
+    pub rtti: bool,
+    pub exceptions: bool,
+    pub warnings: WarningLevel,
+    pub linker: Option<String>,
+    pub static_runtime: bool,
+    pub coverage: bool,
+    pub split_debug: bool,
+    pub pch: Option<String>,
+    pub unity: Option<bool>,
+    pub parallel: Option<u32>,
+}
+
+impl Profile {
+    pub fn dev_defaults() -> Self {
+        Self {
+            opt_level: OptLevel::O0,
+            debug: true,
+            assertions: true,
+            sanitize: Vec::new(),
+            lto: LtoMode::Off,
+            strip: false,
+            pic: false,
+            rtti: true,
+            exceptions: true,
+            warnings: WarningLevel::All,
+            linker: None,
+            static_runtime: false,
+            coverage: false,
+            split_debug: false,
+            pch: None,
+            unity: None,
+            parallel: None,
+        }
+    }
+
+    pub fn release_defaults() -> Self {
+        Self {
+            opt_level: OptLevel::O3,
+            debug: false,
+            assertions: false,
+            sanitize: Vec::new(),
+            lto: LtoMode::Off,
+            strip: true,
+            pic: false,
+            rtti: true,
+            exceptions: true,
+            warnings: WarningLevel::All,
+            linker: None,
+            static_runtime: false,
+            coverage: false,
+            split_debug: false,
+            pch: None,
+            unity: None,
+            parallel: None,
+        }
+    }
+
+    fn merge_from(&mut self, config: &ProfileConfig) {
+        if let Some(v) = config.opt_level {
+            self.opt_level = v;
+        }
+        if let Some(v) = config.debug {
+            self.debug = v;
+        }
+        if let Some(v) = config.assertions {
+            self.assertions = v;
+        }
+        if let Some(ref v) = config.sanitize {
+            self.sanitize = v.clone();
+        }
+        if let Some(v) = config.lto {
+            self.lto = v;
+        }
+        if let Some(v) = config.strip {
+            self.strip = v;
+        }
+        if let Some(v) = config.pic {
+            self.pic = v;
+        }
+        if let Some(v) = config.rtti {
+            self.rtti = v;
+        }
+        if let Some(v) = config.exceptions {
+            self.exceptions = v;
+        }
+        if let Some(v) = config.warnings {
+            self.warnings = v;
+        }
+        if config.linker.is_some() {
+            self.linker.clone_from(&config.linker);
+        }
+        if let Some(v) = config.static_runtime {
+            self.static_runtime = v;
+        }
+        if let Some(v) = config.coverage {
+            self.coverage = v;
+        }
+        if let Some(v) = config.split_debug {
+            self.split_debug = v;
+        }
+        if config.pch.is_some() {
+            self.pch.clone_from(&config.pch);
+        }
+        if config.unity.is_some() {
+            self.unity = config.unity;
+        }
+        if config.parallel.is_some() {
+            self.parallel = config.parallel;
         }
     }
 }
@@ -401,6 +682,78 @@ impl Manifest {
         }
 
         Ok(())
+    }
+
+    pub fn resolve_profile(&self, name: &str) -> Result<Profile, ManifestError> {
+        let canonical = match name {
+            "debug" => "dev",
+            other => other,
+        };
+
+        let mut chain: Vec<&ProfileConfig> = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut current = canonical.to_string();
+
+        loop {
+            if !visited.insert(current.clone()) {
+                return Err(ManifestError::ValidationError {
+                    message: format!("circular profile inheritance: '{current}'"),
+                    help: Some("check 'inherits' fields for cycles".to_string()),
+                });
+            }
+
+            if let Some(config) = self.profile.get(&current) {
+                chain.push(config);
+                if let Some(ref inherits) = config.inherits {
+                    current = inherits.clone();
+                    continue;
+                }
+            }
+            break;
+        }
+
+        let mut base = match current.as_str() {
+            "dev" => Profile::dev_defaults(),
+            "release" => Profile::release_defaults(),
+            "bench" => {
+                let mut p = Profile::release_defaults();
+                p.debug = true;
+                p
+            }
+            other => {
+                if chain.is_empty() {
+                    return Err(ManifestError::ValidationError {
+                        message: format!("unknown profile '{name}'"),
+                        help: Some(
+                            "use 'dev', 'release', 'bench', or define [profile.<name>] with 'inherits'"
+                                .to_string(),
+                        ),
+                    });
+                }
+                if self.profile.contains_key(other) {
+                    return Err(ManifestError::ValidationError {
+                        message: format!("profile '{other}' must specify 'inherits'"),
+                        help: Some(
+                            "add inherits = \"dev\" or inherits = \"release\"".to_string(),
+                        ),
+                    });
+                }
+                return Err(ManifestError::ValidationError {
+                    message: format!(
+                        "profile '{other}' referenced by 'inherits' is not defined"
+                    ),
+                    help: Some(format!(
+                        "define [profile.{other}] or use a built-in name (dev, release, bench)"
+                    )),
+                });
+            }
+        };
+
+        for config in chain.iter().rev() {
+            base.merge_from(config);
+        }
+
+        Ok(base)
     }
 
     fn validate_semver(version: &str) -> Result<(), ManifestError> {
@@ -1065,5 +1418,321 @@ mod tests {
 
         let msg = err.to_string();
         assert!(msg.contains("at least one member"), "got: {msg}");
+    }
+
+    // --- Profile tests ---
+
+    #[test]
+    fn profile_dev_defaults() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dev").unwrap();
+        assert_eq!(p.opt_level, OptLevel::O0);
+        assert!(p.debug);
+        assert!(p.assertions);
+        assert!(!p.strip);
+        assert!(p.rtti);
+        assert!(p.exceptions);
+        assert_eq!(p.warnings, WarningLevel::All);
+        assert_eq!(p.lto, LtoMode::Off);
+    }
+
+    #[test]
+    fn profile_debug_alias() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(m.resolve_profile("debug").unwrap(), m.resolve_profile("dev").unwrap());
+    }
+
+    #[test]
+    fn profile_release_defaults() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("release").unwrap();
+        assert_eq!(p.opt_level, OptLevel::O3);
+        assert!(!p.debug);
+        assert!(!p.assertions);
+        assert!(p.strip);
+    }
+
+    #[test]
+    fn profile_bench_defaults() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("bench").unwrap();
+        assert_eq!(p.opt_level, OptLevel::O3);
+        assert!(p.debug);
+        assert!(p.strip);
+    }
+
+    #[test]
+    fn profile_user_override() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.dev]
+            opt-level = 2
+            sanitize = ["address", "undefined"]
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dev").unwrap();
+        assert_eq!(p.opt_level, OptLevel::O2);
+        assert_eq!(p.sanitize, vec![Sanitizer::Address, Sanitizer::Undefined]);
+        assert!(p.debug);
+    }
+
+    #[test]
+    fn profile_release_override() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.release]
+            lto = "thin"
+            opt-level = "s"
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("release").unwrap();
+        assert_eq!(p.lto, LtoMode::Thin);
+        assert_eq!(p.opt_level, OptLevel::Os);
+        assert!(!p.debug);
+    }
+
+    #[test]
+    fn profile_custom_inherits() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.profiling]
+            inherits = "release"
+            debug = true
+            strip = false
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("profiling").unwrap();
+        assert_eq!(p.opt_level, OptLevel::O3);
+        assert!(p.debug);
+        assert!(!p.strip);
+    }
+
+    #[test]
+    fn profile_inherits_chain() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.release]
+            lto = "thin"
+
+            [profile.dist]
+            inherits = "release"
+            lto = "full"
+            strip = false
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dist").unwrap();
+        assert_eq!(p.lto, LtoMode::Full);
+        assert!(!p.strip);
+        assert_eq!(p.opt_level, OptLevel::O3);
+    }
+
+    #[test]
+    fn profile_circular_inherits() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.a]
+            inherits = "b"
+
+            [profile.b]
+            inherits = "a"
+            "#,
+        )
+        .unwrap();
+
+        let err = m.resolve_profile("a").unwrap_err();
+        assert!(err.to_string().contains("circular"), "got: {err}");
+    }
+
+    #[test]
+    fn profile_custom_no_inherits() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.custom]
+            opt-level = 1
+            "#,
+        )
+        .unwrap();
+
+        let err = m.resolve_profile("custom").unwrap_err();
+        assert!(err.to_string().contains("inherits"), "got: {err}");
+    }
+
+    #[test]
+    fn profile_unknown() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        let err = m.resolve_profile("nonexistent").unwrap_err();
+        assert!(err.to_string().contains("unknown"), "got: {err}");
+    }
+
+    #[test]
+    fn profile_lto_bool_false() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.dev]
+            lto = false
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dev").unwrap();
+        assert_eq!(p.lto, LtoMode::Off);
+    }
+
+    #[test]
+    fn profile_lto_bool_true() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.dev]
+            lto = true
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dev").unwrap();
+        assert_eq!(p.lto, LtoMode::Full);
+    }
+
+    #[test]
+    fn profile_all_fields() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [profile.dev]
+            opt-level = "z"
+            debug = false
+            assertions = false
+            sanitize = ["thread"]
+            lto = "thin"
+            strip = true
+            pic = true
+            rtti = false
+            exceptions = false
+            warnings = "error"
+            linker = "mold"
+            static-runtime = true
+            coverage = true
+            split-debug = true
+            pch = "pch/all.h"
+            unity = true
+            parallel = 8
+            "#,
+        )
+        .unwrap();
+
+        let p = m.resolve_profile("dev").unwrap();
+        assert_eq!(p.opt_level, OptLevel::Oz);
+        assert!(!p.debug);
+        assert!(!p.assertions);
+        assert_eq!(p.sanitize, vec![Sanitizer::Thread]);
+        assert_eq!(p.lto, LtoMode::Thin);
+        assert!(p.strip);
+        assert!(p.pic);
+        assert!(!p.rtti);
+        assert!(!p.exceptions);
+        assert_eq!(p.warnings, WarningLevel::Error);
+        assert_eq!(p.linker.as_deref(), Some("mold"));
+        assert!(p.static_runtime);
+        assert!(p.coverage);
+        assert!(p.split_debug);
+        assert_eq!(p.pch.as_deref(), Some("pch/all.h"));
+        assert_eq!(p.unity, Some(true));
+        assert_eq!(p.parallel, Some(8));
     }
 }

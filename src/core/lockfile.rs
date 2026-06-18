@@ -62,8 +62,9 @@ impl LockFile {
             let source_str = source_to_string(&pkg.source);
             match locked.get(pkg.name.as_str()) {
                 Some(existing) => {
-                    if existing.version != pkg.version.to_string() || existing.source != source_str
-                    {
+                    let version_matches =
+                        normalize_for_compare(&existing.version) == pkg.version.to_string();
+                    if !version_matches || existing.source != source_str {
                         return false;
                     }
                 }
@@ -95,6 +96,23 @@ impl LockFile {
         }
         Ok(())
     }
+}
+
+fn normalize_for_compare(version: &str) -> String {
+    let without_hash = version.split('#').next().unwrap_or(version);
+    let trimmed = without_hash.trim_start_matches(|c: char| !c.is_ascii_digit());
+    if trimmed.is_empty() {
+        return "0.0.0".to_string();
+    }
+    if trimmed.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        let parts: Vec<&str> = trimmed.split('.').collect();
+        return match parts.len() {
+            1 => format!("{}.0.0", parts[0]),
+            2 => format!("{}.{}.0", parts[0], parts[1]),
+            _ => trimmed.to_string(),
+        };
+    }
+    "0.0.0".to_string()
 }
 
 fn source_to_string(source: &DependencySource) -> String {

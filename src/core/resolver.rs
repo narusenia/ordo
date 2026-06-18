@@ -110,7 +110,8 @@ fn register_stub_package(
     pinned: Option<&str>,
 ) -> Result<()> {
     let version = if let Some(pin) = pinned {
-        let trimmed = pin.trim_start_matches(|c: char| !c.is_ascii_digit());
+        let clean = pin.split('#').next().unwrap_or(pin);
+        let trimmed = clean.trim_start_matches(|c: char| !c.is_ascii_digit());
         parse_version(trimmed).unwrap_or_else(|_| Version::new(0, 0, 0))
     } else {
         match &spec.version {

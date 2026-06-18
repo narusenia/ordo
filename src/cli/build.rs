@@ -11,7 +11,7 @@ use crate::core::lockfile::LockFile;
 use crate::core::manifest::{
     CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
-use crate::core::resolver::{normalize_version, resolve_dependencies};
+use crate::core::resolver::resolve_dependencies;
 use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
@@ -326,7 +326,7 @@ fn resolve_and_fetch(
     };
     let cache_path = cache_dir.join(DEP_CACHE_FILE);
 
-    let mut resolved = resolve_dependencies(manifest)?;
+    let resolved = resolve_dependencies(manifest)?;
 
     let existing_lock = LockFile::load(&lock_path).ok();
     let is_fresh = existing_lock
@@ -363,19 +363,18 @@ fn resolve_and_fetch(
 
     let fetch_result = fetch_dependencies(manifest, ctx, ui)?;
 
-    for pkg in &mut resolved {
-        if let Some(ver) = fetch_result.resolved_versions.get(&pkg.name)
-            && let Ok(parsed) = semver::Version::parse(&normalize_version(ver))
-        {
-            pkg.version = parsed;
-        }
-    }
-
     let mut lock = LockFile::load(&lock_path).unwrap_or(LockFile {
         version: 1,
         packages: Vec::new(),
     });
     lock.merge(&resolved);
+
+    for pkg in &mut lock.packages {
+        if let Some(ver) = fetch_result.resolved_versions.get(&pkg.name) {
+            pkg.version = ver.clone();
+        }
+    }
+
     lock.save(&lock_path)?;
     save_dep_cache(&cache_path, &fetch_result.deps)?;
 
@@ -651,6 +650,11 @@ fn fetch_dependencies(
             DependencySource::Path => {
                 let rel_path = spec.path.as_ref().unwrap();
                 let dep_dir = ctx.project_root.join(rel_path);
+                if let Ok(dep_manifest) = Manifest::load(&dep_dir.join("Ordo.toml"))
+                    && let Some(ref pkg) = dep_manifest.package
+                {
+                    resolved_versions.insert(name.clone(), pkg.version.clone());
+                }
                 fetch_path_dep(name, &dep_dir, ctx, ui)?
             }
             _ => continue,

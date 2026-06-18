@@ -167,7 +167,7 @@ fn parse_version_req(req: &str) -> Result<SemverRanges> {
     Ok(Ranges::between(v, upper))
 }
 
-pub fn normalize_version(s: &str) -> String {
+fn normalize_version(s: &str) -> String {
     let parts: Vec<&str> = s.split('.').collect();
     match parts.len() {
         1 => format!("{}.0.0", parts[0]),

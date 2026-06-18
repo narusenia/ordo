@@ -798,7 +798,7 @@ fn collect_member_as_fetched_dep(
     let pkg_name = &pkg.name;
 
     let include_dir = member_dir.join("include");
-    let include_dirs = if include_dir.exists() {
+    let mut include_dirs = if include_dir.exists() {
         vec![fs::canonicalize(&include_dir).ok()?]
     } else {
         vec![fs::canonicalize(member_dir).ok()?]
@@ -811,6 +811,7 @@ fn collect_member_as_fetched_dep(
     let dep_cache_path = output_dir.join(DEP_CACHE_FILE);
     if let Ok(transitive) = load_dep_cache(&dep_cache_path) {
         for t in &transitive {
+            include_dirs.extend(t.include_dirs.iter().cloned());
             lib_dirs.extend(t.lib_dirs.iter().cloned());
             libs.extend(t.libs.iter().cloned());
             frameworks.extend(t.frameworks.iter().cloned());

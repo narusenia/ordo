@@ -855,6 +855,8 @@ fn is_source_file(path: &Path) -> bool {
 }
 
 fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context) -> Result<()> {
+    use crate::util::style::BuildStep;
+
     let mut cmd = Command::new("ninja");
     cmd.arg("-C").arg(build_dir);
 
@@ -881,9 +883,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context)
     let spinner = ui.style.create_spinner("");
     let mut had_progress = false;
     let mut output_lines: Vec<String> = Vec::new();
-    let mut prev_desc = String::new();
-    let mut prev_progress = String::new();
-    let mut prev_done_verb = "";
+    let mut prev_step: Option<BuildStep> = None;
 
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -892,8 +892,7 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context)
         if let Some(parsed) = parse_ninja_progress(&line) {
             had_progress = true;
 
-            let desc = clean_path(parsed.description.as_deref().unwrap_or(""));
-            let progress = format!("[{}/{}]", parsed.current, parsed.total);
+            let file = clean_path(parsed.description.as_deref().unwrap_or(""));
 
             let (active_verb, done_verb) = if parsed.action.contains("Linking") {
                 ("Linking", "Linked")
@@ -903,19 +902,23 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context)
                 ("Compiling", "Compiled")
             };
 
-            if parsed.current > 1 {
+            if parsed.current > 1
+                && let Some(ref prev) = prev_step
+            {
                 spinner.finish_and_clear();
-                ui.style
-                    .success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
+                ui.style.finish_build_step(prev);
             }
 
-            prev_desc = desc.clone();
-            prev_progress = progress.clone();
-            prev_done_verb = done_verb;
+            let step = BuildStep {
+                action: active_verb.to_string(),
+                file: file.clone(),
+                current: parsed.current,
+                total: parsed.total,
+                done_verb,
+            };
 
-            spinner.reset();
-            spinner.enable_steady_tick(std::time::Duration::from_millis(80));
-            spinner.set_message(format!("{active_verb} {desc} {progress}"));
+            ui.style.display_build_step(&step, &spinner);
+            prev_step = Some(step);
         } else if !line.trim().is_empty() {
             output_lines.push(line);
         }
@@ -925,13 +928,11 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context)
 
     let status = child.wait().into_diagnostic()?;
 
-    if had_progress {
+    if had_progress && let Some(ref prev) = prev_step {
         if status.success() {
-            ui.style
-                .success(prev_done_verb, &format!("{prev_desc} {prev_progress}"));
+            ui.style.finish_build_step(prev);
         } else {
-            ui.style
-                .error("Failed", &format!("{prev_desc} {prev_progress}"));
+            ui.style.finish_build_failed(prev);
         }
     }
 

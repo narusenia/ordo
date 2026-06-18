@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub fn run_interactive(base: &Path, no_git: bool) -> Result<()> {
+pub fn run_interactive(base: &Path, no_git: bool, _ctx: &super::context::Context) -> Result<()> {
     let mut term = Term::default();
     let mut theme = MinimalTheme::default();
     let mut p = Promptuity::new(&mut term, &mut theme);
@@ -49,10 +49,10 @@ pub fn run_interactive(base: &Path, no_git: bool) -> Result<()> {
 
     p.finish().into_diagnostic()?;
 
-    run(base, &name, lib, lang, no_git)
+    run(base, &name, lib, lang, no_git, _ctx)
 }
 
-pub fn run(base: &Path, name: &str, lib: bool, lang: ProjectLang, no_git: bool) -> Result<()> {
+pub fn run(base: &Path, name: &str, lib: bool, lang: ProjectLang, no_git: bool, _ctx: &super::context::Context) -> Result<()> {
     let project_dir = base.join(name);
     if project_dir.exists() {
         bail!("directory '{}' already exists", name);
@@ -340,12 +340,14 @@ fn git_init(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::context::Context;
     use tempfile::TempDir;
 
     #[test]
     fn new_cpp_executable() {
         let tmp = TempDir::new().unwrap();
-        run(tmp.path(), "myapp", false, ProjectLang::Cpp, true).unwrap();
+        let ctx = Context::default_for_test();
+        run(tmp.path(), "myapp", false, ProjectLang::Cpp, true, &ctx).unwrap();
 
         let dir = tmp.path().join("myapp");
         assert!(dir.join("Ordo.toml").exists());
@@ -360,7 +362,8 @@ mod tests {
     #[test]
     fn new_c_executable() {
         let tmp = TempDir::new().unwrap();
-        run(tmp.path(), "myapp", false, ProjectLang::C, true).unwrap();
+        let ctx = Context::default_for_test();
+        run(tmp.path(), "myapp", false, ProjectLang::C, true, &ctx).unwrap();
 
         let dir = tmp.path().join("myapp");
         assert!(dir.join("src/main.c").exists());
@@ -374,7 +377,8 @@ mod tests {
     #[test]
     fn new_cpp_library() {
         let tmp = TempDir::new().unwrap();
-        run(tmp.path(), "mylib", true, ProjectLang::Cpp, true).unwrap();
+        let ctx = Context::default_for_test();
+        run(tmp.path(), "mylib", true, ProjectLang::Cpp, true, &ctx).unwrap();
 
         let dir = tmp.path().join("mylib");
         assert!(dir.join("include/mylib/mylib.hpp").exists());
@@ -389,7 +393,8 @@ mod tests {
     #[test]
     fn new_c_library() {
         let tmp = TempDir::new().unwrap();
-        run(tmp.path(), "mylib", true, ProjectLang::C, true).unwrap();
+        let ctx = Context::default_for_test();
+        run(tmp.path(), "mylib", true, ProjectLang::C, true, &ctx).unwrap();
 
         let dir = tmp.path().join("mylib");
         assert!(dir.join("include/mylib/mylib.h").exists());
@@ -406,8 +411,9 @@ mod tests {
     #[test]
     fn new_fails_if_directory_exists() {
         let tmp = TempDir::new().unwrap();
+        let ctx = Context::default_for_test();
         fs::create_dir(tmp.path().join("existing")).unwrap();
-        let result = run(tmp.path(), "existing", false, ProjectLang::Cpp, true);
+        let result = run(tmp.path(), "existing", false, ProjectLang::Cpp, true, &ctx);
         assert!(result.is_err());
     }
 }

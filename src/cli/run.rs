@@ -2,10 +2,11 @@ use crate::cli::build::{BuildOptions, BuildResult};
 use crate::core::manifest::{Manifest, PackageType};
 use crate::core::workspace::Workspace;
 use crate::util::style;
+use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
 use std::process::Command;
 
-pub fn run(args: &[String], release: bool, package: Option<&str>) -> Result<()> {
+pub fn run(args: &[String], release: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
     let manifest_path = cwd.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -15,14 +16,14 @@ pub fn run(args: &[String], release: bool, package: Option<&str>) -> Result<()> 
     let manifest = Manifest::load(&manifest_path)?;
 
     if manifest.is_workspace() {
-        return run_workspace(args, release, package, &cwd);
+        return run_workspace(args, release, package, &cwd, ctx);
     }
 
     if package.is_some() {
         bail!("-p/--package is only valid in a workspace");
     }
 
-    run_single(args, release, None)
+    run_single(args, release, None, ctx)
 }
 
 fn run_workspace(
@@ -30,6 +31,7 @@ fn run_workspace(
     release: bool,
     package: Option<&str>,
     root_dir: &std::path::Path,
+    ctx: &Context,
 ) -> Result<()> {
     let ws = Workspace::load(root_dir)?;
 
@@ -78,10 +80,10 @@ fn run_workspace(
         );
     }
 
-    run_single(args, release, Some(&target_name))
+    run_single(args, release, Some(&target_name), ctx)
 }
 
-fn run_single(args: &[String], release: bool, package: Option<&str>) -> Result<()> {
+fn run_single(args: &[String], release: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let build_opts = BuildOptions {
         release,
         profile: None,
@@ -97,7 +99,7 @@ fn run_single(args: &[String], release: bool, package: Option<&str>) -> Result<(
     let BuildResult {
         output_path,
         package_type,
-    } = crate::cli::build::run(&build_opts)?;
+    } = crate::cli::build::run(&build_opts, ctx)?;
 
     if package_type != PackageType::Executable {
         bail!(

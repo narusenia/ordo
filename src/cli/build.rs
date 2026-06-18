@@ -13,6 +13,7 @@ use crate::core::manifest::{
 use crate::core::resolver::resolve_dependencies;
 use crate::core::workspace::Workspace;
 use crate::util::style;
+use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
 use std::fs;
@@ -53,7 +54,7 @@ pub struct BuildContext {
     pub building: HashSet<PathBuf>,
 }
 
-pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
+pub fn run(opts: &BuildOptions, _ctx: &Context) -> Result<BuildResult> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let canonical = fs::canonicalize(&project_root).into_diagnostic()?;
     let profile_name = resolve_profile_name(opts);

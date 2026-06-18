@@ -5,7 +5,7 @@ use crate::util::style;
 use miette::{Result, bail};
 use std::path::Path;
 
-pub fn run(dir: &Path, name: Option<&str>) -> Result<()> {
+pub fn run(dir: &Path, name: Option<&str>, _ctx: &super::context::Context) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
         bail!("Ordo.toml not found in current directory");
@@ -155,7 +155,8 @@ version = "0.1.0"
 type = "executable"
 "#,
         );
-        run(tmp.path(), None).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run(tmp.path(), None, &ctx).unwrap();
     }
 
     #[test]
@@ -170,7 +171,8 @@ type = "executable"
 fmt = { version = "11", provider = "vcpkg" }
 "#,
         );
-        run(tmp.path(), None).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run(tmp.path(), None, &ctx).unwrap();
         assert!(tmp.path().join("Ordo.lock").exists());
     }
 
@@ -186,7 +188,8 @@ type = "executable"
 fmt = { version = "11", provider = "vcpkg" }
 "#,
         );
-        run(tmp.path(), Some("fmt")).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run(tmp.path(), Some("fmt"), &ctx).unwrap();
     }
 
     #[test]
@@ -201,7 +204,8 @@ type = "executable"
 fmt = { version = "11", provider = "vcpkg" }
 "#,
         );
-        let result = run(tmp.path(), Some("nonexistent"));
+        let ctx = crate::cli::context::Context::default_for_test();
+        let result = run(tmp.path(), Some("nonexistent"), &ctx);
         assert!(result.is_err());
     }
 

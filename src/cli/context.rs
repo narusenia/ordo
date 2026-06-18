@@ -1,6 +1,6 @@
 use super::{ColorMode, StyleMode};
 use crate::core::manifest::Manifest;
-use crate::util::style::{DefaultStyle, StyleOutput};
+use crate::util::style::{CargoLikeStyle, DefaultStyle, MinimalStyle, StyleOutput};
 
 #[allow(dead_code)]
 pub struct Context {
@@ -19,8 +19,8 @@ impl Context {
 
         let style: Box<dyn StyleOutput> = match style_mode {
             StyleMode::Default => Box::new(DefaultStyle),
-            StyleMode::Minimal => Box::new(DefaultStyle),
-            StyleMode::CargoLike => Box::new(DefaultStyle),
+            StyleMode::Minimal => Box::new(MinimalStyle),
+            StyleMode::CargoLike => Box::new(CargoLikeStyle),
         };
 
         Self {

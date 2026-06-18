@@ -269,6 +269,7 @@ impl Provider for VcpkgProvider {
             name: name.to_string(),
             version: resolved_version,
             source: "vcpkg".to_string(),
+            checksum: None,
         })
     }
 

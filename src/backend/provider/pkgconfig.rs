@@ -54,6 +54,7 @@ impl Provider for PkgConfigProvider {
             name: name.to_string(),
             version: resolved_version,
             source: "pkg-config".to_string(),
+            checksum: None,
         })
     }
 

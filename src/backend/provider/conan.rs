@@ -203,6 +203,7 @@ impl ConanProvider {
             name: name.to_string(),
             version: resolved_version,
             source: "conan".to_string(),
+            checksum: None,
         })
     }
 }

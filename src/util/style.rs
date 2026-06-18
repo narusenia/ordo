@@ -276,3 +276,192 @@ impl StyleOutput for DefaultStyle {
         self.error("Failed", &format!("{} {progress}", step.file));
     }
 }
+
+// === MinimalStyle ===
+
+pub struct MinimalStyle;
+
+impl StyleOutput for MinimalStyle {
+    fn success(&self, verb: &str, msg: &str) {
+        if verb.is_empty() {
+            eprintln!("{msg}");
+        } else {
+            eprintln!("{verb} {msg}");
+        }
+    }
+
+    fn error(&self, verb: &str, msg: &str) {
+        if verb.is_empty() {
+            eprintln!("{msg}");
+        } else {
+            eprintln!("{verb} {msg}");
+        }
+    }
+
+    fn warn(&self, verb: &str, msg: &str) {
+        eprintln!("{verb} {msg}");
+    }
+
+    fn skip(&self, verb: &str, msg: &str) {
+        eprintln!("{verb} {msg}");
+    }
+
+    fn run_icon(&self, verb: &str, msg: &str) {
+        eprintln!("{verb} {msg}");
+    }
+
+    fn header(&self, msg: &str) {
+        eprintln!("{msg}");
+    }
+
+    fn meta(&self, msg: &str) {
+        eprintln!("  {msg}");
+    }
+
+    fn tree_line(&self, line: &str) {
+        eprintln!("  {line}");
+    }
+
+    fn tree_detail(&self, prefix: &str, detail: &str) {
+        eprintln!("{prefix}{detail}");
+    }
+
+    fn verbose_cmd(&self, cmd: &str) {
+        eprintln!("  $ {cmd}");
+    }
+
+    fn summary_bar(&self) {}
+
+    fn create_spinner(&self, _msg: &str) -> ProgressBar {
+        ProgressBar::hidden()
+    }
+
+    fn create_spinner_with_detail(&self, msg: &str) -> SpinnerWithDetail {
+        eprintln!("{msg}");
+        SpinnerWithDetail {
+            mp: MultiProgress::new(),
+            spinner: ProgressBar::hidden(),
+            detail: ProgressBar::hidden(),
+        }
+    }
+
+    fn create_multi_progress(&self) -> MultiProgress {
+        MultiProgress::new()
+    }
+
+    fn spinner_in_multi(&self, mp: &MultiProgress, _prefix: &str, _msg: &str) -> ProgressBar {
+        mp.add(ProgressBar::hidden())
+    }
+
+    fn finish_spinner_success(&self, _pb: &ProgressBar, verb: &str, msg: &str) {
+        self.success(verb, msg);
+    }
+
+    fn finish_spinner_error(&self, _pb: &ProgressBar, verb: &str, msg: &str) {
+        self.error(verb, msg);
+    }
+
+    fn display_build_step(&self, step: &BuildStep, _spinner: &ProgressBar) {
+        eprintln!(
+            "[{}/{}] {} {}",
+            step.current, step.total, step.action, step.file
+        );
+    }
+
+    fn finish_build_step(&self, _step: &BuildStep) {}
+
+    fn finish_build_failed(&self, _step: &BuildStep) {}
+}
+
+// === CargoLikeStyle ===
+
+pub struct CargoLikeStyle;
+
+impl CargoLikeStyle {
+    fn cargo_line(verb: &str, msg: &str) {
+        eprintln!("{} {msg}", GREEN_BOLD.apply_to(format!("{verb:>12}")));
+    }
+}
+
+impl StyleOutput for CargoLikeStyle {
+    fn success(&self, verb: &str, msg: &str) {
+        CargoLikeStyle::cargo_line(verb, msg);
+    }
+
+    fn error(&self, verb: &str, msg: &str) {
+        if verb.is_empty() {
+            eprintln!("{}", RED_BOLD.apply_to("error"));
+        } else {
+            eprintln!("{} {msg}", RED_BOLD.apply_to(format!("{verb:>12}")));
+        }
+    }
+
+    fn warn(&self, verb: &str, msg: &str) {
+        eprintln!("{} {msg}", YELLOW_BOLD.apply_to(format!("{verb:>12}")));
+    }
+
+    fn skip(&self, verb: &str, msg: &str) {
+        CargoLikeStyle::cargo_line(verb, msg);
+    }
+
+    fn run_icon(&self, verb: &str, msg: &str) {
+        CargoLikeStyle::cargo_line(verb, msg);
+    }
+
+    fn header(&self, _msg: &str) {}
+
+    fn meta(&self, msg: &str) {
+        eprintln!("{msg:>12}", msg = "");
+        eprintln!("             {msg}");
+    }
+
+    fn tree_line(&self, line: &str) {
+        eprintln!("  {line}");
+    }
+
+    fn tree_detail(&self, prefix: &str, detail: &str) {
+        eprintln!("{prefix}{detail}");
+    }
+
+    fn verbose_cmd(&self, cmd: &str) {
+        eprintln!("  $ {cmd}");
+    }
+
+    fn summary_bar(&self) {}
+
+    fn create_spinner(&self, _msg: &str) -> ProgressBar {
+        ProgressBar::hidden()
+    }
+
+    fn create_spinner_with_detail(&self, _msg: &str) -> SpinnerWithDetail {
+        SpinnerWithDetail {
+            mp: MultiProgress::new(),
+            spinner: ProgressBar::hidden(),
+            detail: ProgressBar::hidden(),
+        }
+    }
+
+    fn create_multi_progress(&self) -> MultiProgress {
+        MultiProgress::new()
+    }
+
+    fn spinner_in_multi(&self, mp: &MultiProgress, _prefix: &str, _msg: &str) -> ProgressBar {
+        mp.add(ProgressBar::hidden())
+    }
+
+    fn finish_spinner_success(&self, _pb: &ProgressBar, verb: &str, msg: &str) {
+        CargoLikeStyle::cargo_line(verb, msg);
+    }
+
+    fn finish_spinner_error(&self, _pb: &ProgressBar, verb: &str, msg: &str) {
+        self.error(verb, msg);
+    }
+
+    fn display_build_step(&self, step: &BuildStep, _spinner: &ProgressBar) {
+        CargoLikeStyle::cargo_line(&step.action, &step.file);
+    }
+
+    fn finish_build_step(&self, _step: &BuildStep) {}
+
+    fn finish_build_failed(&self, _step: &BuildStep) {}
+}

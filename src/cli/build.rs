@@ -51,6 +51,7 @@ pub struct BuildContext {
     pub locked: bool,
     pub frozen: bool,
     pub building: HashSet<PathBuf>,
+    pub built_deps: std::collections::HashMap<PathBuf, FetchedDep>,
 }
 
 pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
@@ -82,6 +83,7 @@ pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
         locked: opts.locked,
         frozen: opts.frozen,
         building: HashSet::from([canonical]),
+        built_deps: std::collections::HashMap::new(),
     };
 
     build_project(&mut bctx, ctx)
@@ -120,6 +122,7 @@ fn run_workspace_build(
     fs::create_dir_all(&ws_target_dir).into_diagnostic()?;
 
     let mut last_result = None;
+    let mut built_deps = std::collections::HashMap::new();
 
     let ws_root = root_dir.to_path_buf();
 
@@ -138,8 +141,10 @@ fn run_workspace_build(
                 locked: opts.locked,
                 frozen: opts.frozen,
                 building: HashSet::from([canonical]),
+                built_deps: std::mem::take(&mut built_deps),
             };
             last_result = Some(build_project(&mut bctx, ctx)?);
+            built_deps = std::mem::take(&mut bctx.built_deps);
             continue;
         }
 
@@ -161,9 +166,11 @@ fn run_workspace_build(
             locked: opts.locked,
             frozen: opts.frozen,
             building: HashSet::from([canonical]),
+            built_deps: std::mem::take(&mut built_deps),
         };
 
         last_result = Some(build_project(&mut bctx, ctx)?);
+        built_deps = std::mem::take(&mut bctx.built_deps);
     }
 
     last_result.ok_or_else(|| miette::miette!("no members to build"))
@@ -687,6 +694,11 @@ fn fetch_path_dep(
     }
 
     let canonical_dep = fs::canonicalize(dep_dir).into_diagnostic()?;
+
+    if let Some(cached) = ctx.built_deps.get(&canonical_dep) {
+        return Ok(cached.clone());
+    }
+
     if ctx.building.contains(&canonical_dep) {
         bail!(
             "circular path dependency detected: '{}' at '{}'",
@@ -755,13 +767,17 @@ fn fetch_path_dep(
 
     ui.style.success("Built", &format!("{name} (path)"));
 
-    Ok(FetchedDep {
+    let dep = FetchedDep {
         name: name.to_string(),
         include_dirs,
         lib_dirs,
         libs,
         frameworks,
-    })
+    };
+
+    ctx.built_deps.insert(canonical_dep, dep.clone());
+
+    Ok(dep)
 }
 
 fn scan_library_artifacts(output_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {
@@ -1066,6 +1082,7 @@ mod tests {
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx, &ui);
         assert!(result.is_err());
@@ -1089,6 +1106,7 @@ mod tests {
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let result = fetch_path_dep("mylib", tmp.path(), &mut ctx, &ui);
         assert!(result.is_err());
@@ -1124,6 +1142,7 @@ type = "static-library"
             locked: false,
             frozen: false,
             building: HashSet::from([canonical]),
+            built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
         let result = fetch_path_dep("mylib", &dep_dir, &mut ctx, &ui);
@@ -1161,6 +1180,7 @@ type = "static-library"
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
         let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx, &ui).unwrap();

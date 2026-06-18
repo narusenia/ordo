@@ -15,6 +15,7 @@ impl Provider for SystemProvider {
             name: name.to_string(),
             version: "system".to_string(),
             source: "system".to_string(),
+            checksum: None,
         })
     }
 

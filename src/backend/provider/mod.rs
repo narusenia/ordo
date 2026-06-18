@@ -16,6 +16,7 @@ pub struct ResolvedDep {
     pub name: String,
     pub version: String,
     pub source: String,
+    pub checksum: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

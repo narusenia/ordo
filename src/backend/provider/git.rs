@@ -244,6 +244,7 @@ impl GitProvider {
             name: name.to_string(),
             version: format!("{}#{short_hash}", spec.git_ref),
             source: format!("git+{}", spec.url),
+            checksum: Some(format!("git:{commit}")),
         })
     }
 

@@ -226,6 +226,7 @@ fn verify_resolve(
                 name: name.to_string(),
                 version: ver,
                 source: "vcpkg".to_string(),
+                checksum: None,
             })
         }
         "conan" => {

@@ -373,6 +373,9 @@ fn resolve_and_fetch(
         if let Some(ver) = fetch_result.resolved_versions.get(&pkg.name) {
             pkg.version = ver.clone();
         }
+        if let Some(cksum) = fetch_result.checksums.get(&pkg.name) {
+            pkg.checksum = Some(cksum.clone());
+        }
     }
 
     lock.save(&lock_path)?;
@@ -435,6 +438,7 @@ fn save_dep_cache(path: &Path, deps: &[FetchedDep]) -> Result<()> {
 struct FetchResult {
     deps: Vec<FetchedDep>,
     resolved_versions: std::collections::HashMap<String, String>,
+    checksums: std::collections::HashMap<String, String>,
 }
 
 fn fetch_dependencies(
@@ -444,6 +448,7 @@ fn fetch_dependencies(
 ) -> Result<FetchResult> {
     let mut fetched = Vec::new();
     let mut resolved_versions = std::collections::HashMap::new();
+    let mut checksums = std::collections::HashMap::new();
 
     // Pass 1: batch-install all vcpkg deps in one manifest
     let vcpkg_deps: Vec<VcpkgPackageSpec<'_>> = manifest
@@ -542,6 +547,7 @@ fn fetch_dependencies(
                     name: name.to_string(),
                     version: version.clone(),
                     source: "vcpkg".to_string(),
+                    checksum: None,
                 };
                 match provider.fetch(&resolved) {
                     Ok(dep) => {
@@ -605,6 +611,9 @@ fn fetch_dependencies(
                     Ok(resolved) => {
                         sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
                         resolved_versions.insert(name.clone(), resolved.version.clone());
+                        if let Some(ref cksum) = resolved.checksum {
+                            checksums.insert(name.clone(), cksum.clone());
+                        }
                         let script = spec.with.as_ref().map(std::path::Path::new);
                         let script_root =
                             ctx.workspace_root.as_deref().unwrap_or(&ctx.project_root);
@@ -665,6 +674,7 @@ fn fetch_dependencies(
     Ok(FetchResult {
         deps: fetched,
         resolved_versions,
+        checksums,
     })
 }
 

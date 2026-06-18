@@ -52,7 +52,14 @@ pub fn run_interactive(base: &Path, no_git: bool, _ctx: &super::context::Context
     run(base, &name, lib, lang, no_git, _ctx)
 }
 
-pub fn run(base: &Path, name: &str, lib: bool, lang: ProjectLang, no_git: bool, _ctx: &super::context::Context) -> Result<()> {
+pub fn run(
+    base: &Path,
+    name: &str,
+    lib: bool,
+    lang: ProjectLang,
+    no_git: bool,
+    _ctx: &super::context::Context,
+) -> Result<()> {
     let project_dir = base.join(name);
     if project_dir.exists() {
         bail!("directory '{}' already exists", name);

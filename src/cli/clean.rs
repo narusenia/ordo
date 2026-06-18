@@ -1,6 +1,6 @@
+use super::context::Context;
 use crate::core::manifest::Manifest;
 use crate::util::style;
-use super::context::Context;
 use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;

@@ -1,3 +1,4 @@
+use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::conan::ConanProvider;
@@ -13,7 +14,6 @@ use crate::core::manifest::{
 use crate::core::resolver::resolve_dependencies;
 use crate::core::workspace::Workspace;
 use crate::util::style;
-use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
 use std::fs;

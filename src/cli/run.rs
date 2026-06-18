@@ -1,8 +1,8 @@
+use super::context::Context;
 use crate::cli::build::{BuildOptions, BuildResult};
 use crate::core::manifest::{Manifest, PackageType};
 use crate::core::workspace::Workspace;
 use crate::util::style;
-use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
 use std::process::Command;
 

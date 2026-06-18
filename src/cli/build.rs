@@ -1,3 +1,4 @@
+use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::conan::ConanProvider;
@@ -53,7 +54,7 @@ pub struct BuildContext {
     pub building: HashSet<PathBuf>,
 }
 
-pub fn run(opts: &BuildOptions) -> Result<BuildResult> {
+pub fn run(opts: &BuildOptions, _ctx: &Context) -> Result<BuildResult> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let canonical = fs::canonicalize(&project_root).into_diagnostic()?;
     let profile_name = resolve_profile_name(opts);

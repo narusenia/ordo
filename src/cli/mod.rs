@@ -1,6 +1,7 @@
 pub mod add;
 pub mod build;
 pub mod clean;
+pub mod context;
 pub mod init;
 pub mod new;
 pub mod run;
@@ -27,6 +28,10 @@ pub struct Cli {
     /// Verbose output (-v for commands, -vv for debug)
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    /// Output style
+    #[arg(long, global = true, default_value = "default", env = "ORDO_CLI_STYLE")]
+    pub style: StyleMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -34,6 +39,16 @@ pub enum ColorMode {
     Auto,
     Always,
     Never,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StyleMode {
+    #[default]
+    Default,
+    Minimal,
+    #[value(name = "cargo-like")]
+    CargoLike,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum)]

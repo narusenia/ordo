@@ -1,10 +1,11 @@
+use super::context::Context;
 use crate::core::manifest::Manifest;
 use crate::util::style;
 use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 
-pub fn run(cache: bool) -> Result<()> {
+pub fn run(cache: bool, _ctx: &Context) -> Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
     let manifest_path = cwd.join("Ordo.toml");
 

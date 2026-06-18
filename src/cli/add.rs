@@ -70,6 +70,7 @@ pub fn run(
     provider_flag: Option<&str>,
     no_verify: bool,
     with: Option<&str>,
+    _ctx: &super::context::Context,
 ) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
     let parsed = parse_spec(spec);

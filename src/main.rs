@@ -5,6 +5,7 @@ mod error;
 mod util;
 
 use clap::Parser;
+use cli::context::Context;
 use cli::{Cli, ColorMode, Command, ProjectLang};
 use miette::{IntoDiagnostic, Result};
 use tracing_subscriber::EnvFilter;
@@ -17,6 +18,7 @@ fn main() -> Result<()> {
     init_color(cli.color);
 
     let _paths = OrdoPaths::resolve();
+    let ctx = Context::resolve(cli.style, cli.verbose, cli.color);
 
     match cli.command {
         Command::New {
@@ -29,16 +31,16 @@ fn main() -> Result<()> {
             match name {
                 Some(name) => {
                     let lang = lang.unwrap_or(ProjectLang::Cpp);
-                    cli::new::run(&cwd, &name, lib, lang, no_git)?;
+                    cli::new::run(&cwd, &name, lib, lang, no_git, &ctx)?;
                 }
                 None => {
-                    cli::new::run_interactive(&cwd, no_git)?;
+                    cli::new::run_interactive(&cwd, no_git, &ctx)?;
                 }
             }
         }
         Command::Init => {
             let cwd = std::env::current_dir().into_diagnostic()?;
-            cli::init::run(&cwd)?;
+            cli::init::run(&cwd, &ctx)?;
         }
         Command::Build {
             release,
@@ -62,14 +64,14 @@ fn main() -> Result<()> {
                 verbose: cli.verbose,
                 package,
             };
-            cli::build::run(&opts)?;
+            cli::build::run(&opts, &ctx)?;
         }
         Command::Run {
             args,
             release,
             package,
         } => {
-            cli::run::run(&args, release, package.as_deref())?;
+            cli::run::run(&args, release, package.as_deref(), &ctx)?;
         }
         Command::Test { .. } => {
             eprintln!("ordo test: not yet implemented");
@@ -78,7 +80,7 @@ fn main() -> Result<()> {
             eprintln!("ordo check: not yet implemented");
         }
         Command::Clean { cache, .. } => {
-            cli::clean::run(cache)?;
+            cli::clean::run(cache, &ctx)?;
         }
         Command::Fmt { .. } => {
             eprintln!("ordo fmt: not yet implemented");
@@ -95,15 +97,15 @@ fn main() -> Result<()> {
             no_verify,
             with,
         } => {
-            cli::add::run(&spec, provider.as_deref(), no_verify, with.as_deref())?;
+            cli::add::run(&spec, provider.as_deref(), no_verify, with.as_deref(), &ctx)?;
         }
         Command::Update { name } => {
             let cwd = std::env::current_dir().into_diagnostic()?;
-            cli::update::run(&cwd, name.as_deref())?;
+            cli::update::run(&cwd, name.as_deref(), &ctx)?;
         }
         Command::Tree { .. } => {
             let cwd = std::env::current_dir().into_diagnostic()?;
-            cli::tree::run(&cwd)?;
+            cli::tree::run(&cwd, &ctx)?;
         }
         Command::Install { .. } => {
             eprintln!("ordo install: not yet implemented");

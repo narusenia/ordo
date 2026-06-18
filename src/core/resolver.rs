@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::core::lockfile::LockFile;
 use crate::core::manifest::{DependencySource, DependencySpec, Manifest};
 use miette::{Result, bail};
 use pubgrub::{OfflineDependencyProvider, Ranges, resolve};
@@ -15,7 +16,10 @@ pub struct ResolvedPackage {
     pub source: DependencySource,
 }
 
-pub fn resolve_dependencies(manifest: &Manifest) -> Result<Vec<ResolvedPackage>> {
+pub fn resolve_dependencies(
+    manifest: &Manifest,
+    lock: Option<&LockFile>,
+) -> Result<Vec<ResolvedPackage>> {
     if manifest.dependencies.is_empty() {
         return Ok(Vec::new());
     }
@@ -31,13 +35,22 @@ pub fn resolve_dependencies(manifest: &Manifest) -> Result<Vec<ResolvedPackage>>
     let mut root_deps: Vec<(String, SemverRanges)> = Vec::new();
     let mut source_map: BTreeMap<String, DependencySource> = BTreeMap::new();
 
+    let locked_versions: BTreeMap<&str, &str> = lock
+        .map(|l| {
+            l.packages
+                .iter()
+                .map(|p| (p.name.as_str(), p.version.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+
     for (name, spec) in &manifest.dependencies {
         let range = spec_to_range(name, spec)?;
         root_deps.push((name.clone(), range.clone()));
         source_map.insert(name.clone(), spec.source_kind());
 
-        // For path/provider/system deps, register a single known version
-        register_stub_package(&mut provider, name, spec)?;
+        let pinned = locked_versions.get(name.as_str()).copied();
+        register_stub_package(&mut provider, name, spec, pinned)?;
     }
 
     provider.add_dependencies(root_name.clone(), root_version.clone(), root_deps);
@@ -94,16 +107,22 @@ fn register_stub_package(
     provider: &mut OfflineDependencyProvider<String, SemverRanges>,
     name: &str,
     spec: &DependencySpec,
+    pinned: Option<&str>,
 ) -> Result<()> {
-    let version = match &spec.version {
-        Some(v) => {
-            let trimmed = v.trim_start_matches(|c: char| !c.is_ascii_digit());
-            parse_version(trimmed).unwrap_or_else(|_| Version::new(0, 0, 0))
+    let version = if let Some(pin) = pinned {
+        let clean = pin.split('#').next().unwrap_or(pin);
+        let trimmed = clean.trim_start_matches(|c: char| !c.is_ascii_digit());
+        parse_version(trimmed).unwrap_or_else(|_| Version::new(0, 0, 0))
+    } else {
+        match &spec.version {
+            Some(v) => {
+                let trimmed = v.trim_start_matches(|c: char| !c.is_ascii_digit());
+                parse_version(trimmed).unwrap_or_else(|_| Version::new(0, 0, 0))
+            }
+            None => Version::new(0, 0, 0),
         }
-        None => Version::new(0, 0, 0),
     };
 
-    // Register this package with no transitive dependencies for now
     let no_deps: Vec<(String, SemverRanges)> = Vec::new();
     provider.add_dependencies(name.to_string(), version, no_deps);
 
@@ -196,7 +215,7 @@ mod tests {
             type = "executable"
             "#,
         );
-        let resolved = resolve_dependencies(&m).unwrap();
+        let resolved = resolve_dependencies(&m, None).unwrap();
         assert!(resolved.is_empty());
     }
 
@@ -213,7 +232,7 @@ mod tests {
             core = { path = "../core" }
             "#,
         );
-        let resolved = resolve_dependencies(&m).unwrap();
+        let resolved = resolve_dependencies(&m, None).unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "core");
         assert_eq!(resolved[0].source, DependencySource::Path);
@@ -232,7 +251,7 @@ mod tests {
             fmt = "11"
             "#,
         );
-        let resolved = resolve_dependencies(&m).unwrap();
+        let resolved = resolve_dependencies(&m, None).unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "fmt");
         assert_eq!(resolved[0].version, Version::new(11, 0, 0));
@@ -253,7 +272,7 @@ mod tests {
             spdlog = { version = "1.14", provider = "vcpkg" }
             "#,
         );
-        let resolved = resolve_dependencies(&m).unwrap();
+        let resolved = resolve_dependencies(&m, None).unwrap();
         assert_eq!(resolved.len(), 3);
         // Sorted by name
         assert_eq!(resolved[0].name, "core");
@@ -357,7 +376,7 @@ mod tests {
             hoge = "*"
             "#,
         );
-        let resolved = resolve_dependencies(&m).unwrap();
+        let resolved = resolve_dependencies(&m, None).unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "hoge");
     }

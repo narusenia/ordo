@@ -1,5 +1,5 @@
-use super::{CompileFlags, Compiler, LinkFlags};
-use crate::core::manifest::CppStandard;
+use super::{CompileFlags, Compiler, LtoMode, LinkFlags};
+use crate::core::manifest::{CppStandard, OptLevel, WarningLevel};
 use std::path::{Path, PathBuf};
 
 pub struct MsvcCompiler;
@@ -36,13 +36,42 @@ impl Compiler for MsvcCompiler {
         }
 
         match flags.opt_level {
-            0 => args.push("/Od".to_string()),
-            1 => args.push("/O1".to_string()),
-            _ => args.push("/O2".to_string()),
+            OptLevel::O0 => args.push("/Od".to_string()),
+            OptLevel::O1 | OptLevel::Os | OptLevel::Oz => args.push("/O1".to_string()),
+            OptLevel::O2 | OptLevel::O3 => args.push("/O2".to_string()),
         }
 
         if flags.debug {
             args.push("/Zi".to_string());
+        }
+
+        if !flags.assertions {
+            args.push("/DNDEBUG".to_string());
+        }
+
+        if flags.cpp_standard.is_some() {
+            if !flags.rtti {
+                args.push("/GR-".to_string());
+            }
+            if !flags.exceptions {
+                // Don't add /EHsc
+            } else {
+                args.push("/EHsc".to_string());
+            }
+        }
+
+        match flags.warnings {
+            WarningLevel::Default => args.push("/W3".to_string()),
+            WarningLevel::All => args.push("/W4".to_string()),
+            WarningLevel::Extra => args.push("/Wall".to_string()),
+            WarningLevel::Error => {
+                args.push("/W4".to_string());
+                args.push("/WX".to_string());
+            }
+        }
+
+        if flags.coverage {
+            args.push("/PROFILE".to_string());
         }
 
         for def in &flags.defines {
@@ -53,13 +82,11 @@ impl Compiler for MsvcCompiler {
             args.push(format!("/I{}", inc.display()));
         }
 
-        // MSVC depfile via /showIncludes (parsed by Ninja's msvc_deps_prefix)
         args.push("/showIncludes".to_string());
 
         args.push(format!("/Fo{}", obj.display()));
         args.push(src.display().to_string());
 
-        // depfile path is tracked but MSVC uses /showIncludes instead of -MF
         let _ = depfile;
 
         args
@@ -67,6 +94,19 @@ impl Compiler for MsvcCompiler {
 
     fn link_args(&self, objects: &[PathBuf], output: &Path, flags: &LinkFlags) -> Vec<String> {
         let mut args = vec!["/nologo".to_string()];
+
+        match flags.lto {
+            LtoMode::Off => {}
+            LtoMode::Thin | LtoMode::Full => args.push("/LTCG".to_string()),
+        }
+
+        if flags.strip {
+            args.push("/DEBUG:NONE".to_string());
+        }
+
+        if flags.static_runtime {
+            args.push("/MT".to_string());
+        }
 
         args.push(format!("/OUT:{}", output.display()));
 
@@ -93,13 +133,14 @@ impl Compiler for MsvcCompiler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::manifest::OptLevel;
 
     #[test]
     fn compile_args_basic() {
         let c = MsvcCompiler;
         let flags = CompileFlags {
             cpp_standard: Some(CppStandard::Cpp20),
-            opt_level: 0,
+            opt_level: OptLevel::O0,
             debug: true,
             ..CompileFlags::default()
         };
@@ -123,7 +164,7 @@ mod tests {
         let c = MsvcCompiler;
         let flags = CompileFlags {
             cpp_standard: Some(CppStandard::Cpp20),
-            opt_level: 3,
+            opt_level: OptLevel::O3,
             debug: false,
             ..CompileFlags::default()
         };

@@ -11,6 +11,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 3/3 | Lua scripting for git deps, sandbox, caching |
+| M2.7 | Dependency Enhancements | GH #23 ~ #28 | 0/6 | alias/link_name, multi-add, new providers, platform-conditional deps |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 2/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -49,6 +50,17 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | TASK-037 | Lua Runtime Integration and Sandbox | Done | L |
 | TASK-038 | Lua Script API (exec, file helpers, context) | Done | M |
 | TASK-039 | Git Provider Lua Integration and Caching | Done | M |
+
+### M2.7: Dependency Enhancements
+
+| Issue | Title | Status | Size |
+|-------|-------|--------|------|
+| [#23](https://github.com/NaruseNia/ordo/issues/23) | `alias` and `link_name` fields | Todo | M |
+| [#24](https://github.com/NaruseNia/ordo/issues/24) | `ordo add` multiple packages | Todo | M |
+| [#25](https://github.com/NaruseNia/ordo/issues/25) | System-level providers (brew, nix, pacman) | Todo | L |
+| [#26](https://github.com/NaruseNia/ordo/issues/26) | Project-level providers (clib, nuget) | Todo | L |
+| [#27](https://github.com/NaruseNia/ordo/issues/27) | Cargo provider (Rust crate C bindings) | Todo | XL |
+| [#28](https://github.com/NaruseNia/ordo/issues/28) | Platform-conditional dependencies | Todo | L |
 
 ### M3: Workspace & Profiles
 
@@ -104,6 +116,13 @@ M2: Dependency Management
 M2.5: Lua Build Scripts
   TASK-037 → TASK-038 → TASK-039
                             ↓
+M2.7: Dependency Enhancements
+  #23 (alias/link_name) → #24 (multi-add) ─┐
+  #28 (platform-conditional) ───────────────┤
+  #25 (brew/nix/pacman) ────────────────────┤
+  #26 (clib/nuget) ─────────────────────────┤
+  #27 (cargo provider) ────────────────────-┘
+                            ↓
 M3: Workspace & Profiles
   TASK-015 → TASK-016 → TASK-017 → TASK-018 → TASK-019
                                                   ↓
@@ -132,9 +151,9 @@ M6: Packaging & Ecosystem
 | TASK-009 | Done | REQ-DEPS-004 |
 | TASK-010 | Done | REQ-DEPS-007, REQ-DEPS-008 |
 | TASK-011 | Done | REQ-DEPS-005 |
-| TASK-012 | Todo | REQ-DEPS-006 |
-| TASK-013 | Todo | REQ-DEPS-001 (git) |
-| TASK-014 | Todo | REQ-DEPS-009 |
+| TASK-012 | Done | REQ-DEPS-006 |
+| TASK-013 | Done | REQ-DEPS-001 (git) |
+| TASK-014 | Done | REQ-DEPS-009 |
 | TASK-015 | Todo | REQ-WORK-001, REQ-WORK-002, REQ-WORK-003 |
 | TASK-016 | Todo | REQ-WORK-004, REQ-WORK-005 |
 | TASK-017 | Todo | REQ-BUILD-004 (full), REQ-BUILD-005 |
@@ -158,9 +177,15 @@ M6: Packaging & Ecosystem
 | TASK-035 | Todo | REQ-SEC-005, REQ-PROJ-005 (CI steps) |
 | TASK-036 | Todo | REQ-TOOL-003 |
 
-| TASK-037 | Todo | REQ-LUA-002, REQ-LUA-007 |
-| TASK-038 | Todo | REQ-LUA-003, REQ-LUA-004, REQ-LUA-005, REQ-LUA-006 |
-| TASK-039 | Todo | REQ-LUA-001, REQ-LUA-008 |
+| GH #23 | Todo | REQ-DEPS-001 (alias/link_name extension) |
+| GH #24 | Todo | REQ-DEPS-009 (multi-add extension) |
+| GH #25 | Todo | REQ-DEPS-007 (brew/nix/pacman providers) |
+| GH #26 | Todo | REQ-DEPS-005, REQ-DEPS-006 (clib/nuget providers) |
+| GH #27 | Todo | REQ-DEPS-001 (cargo provider) |
+| GH #28 | Todo | REQ-DEPS-001 (platform-conditional deps) |
+| TASK-037 | Done | REQ-LUA-002, REQ-LUA-007 |
+| TASK-038 | Done | REQ-LUA-003, REQ-LUA-004, REQ-LUA-005, REQ-LUA-006 |
+| TASK-039 | Done | REQ-LUA-001, REQ-LUA-008 |
 
 ## Untraced Requirements (Future / Placeholder)
 

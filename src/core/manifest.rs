@@ -182,6 +182,12 @@ pub enum OptLevel {
     Oz,
 }
 
+impl fmt::Display for OptLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_flag())
+    }
+}
+
 impl OptLevel {
     pub fn as_flag(&self) -> &str {
         match self {
@@ -244,8 +250,9 @@ impl<'de> Deserialize<'de> for OptLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LtoMode {
+    #[default]
     Off,
     Thin,
     Full,

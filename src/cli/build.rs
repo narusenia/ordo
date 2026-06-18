@@ -231,7 +231,7 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
 
     let fetched_deps = resolve_and_fetch(&manifest, ctx, ui)?;
     let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
-    let link_flags = build_link_flags(&fetched_deps);
+    let link_flags = build_link_flags(&manifest, ctx, &fetched_deps);
 
     let ninja_gen = NinjaGenerator::new(
         compiler.as_ref(),
@@ -683,7 +683,15 @@ fn build_compile_flags(
     ctx: &BuildContext,
     deps: &[FetchedDep],
 ) -> CompileFlags {
-    let (opt_level, debug) = if ctx.release { (3, false) } else { (0, true) };
+    let profile = manifest
+        .resolve_profile(&ctx.profile_name)
+        .unwrap_or_else(|_| {
+            if ctx.release {
+                crate::core::manifest::Profile::release_defaults()
+            } else {
+                crate::core::manifest::Profile::dev_defaults()
+            }
+        });
 
     let mut include_dirs = Vec::new();
     let include_path = ctx.project_root.join("include");
@@ -707,8 +715,16 @@ fn build_compile_flags(
             None
         },
         c_standard: manifest.language.c,
-        opt_level,
-        debug,
+        opt_level: profile.opt_level,
+        debug: profile.debug,
+        assertions: profile.assertions,
+        sanitize: profile.sanitize.clone(),
+        pic: profile.pic,
+        rtti: profile.rtti,
+        exceptions: profile.exceptions,
+        warnings: profile.warnings,
+        coverage: profile.coverage,
+        split_debug: profile.split_debug,
         defines: Vec::new(),
         include_dirs,
     }
@@ -901,7 +917,21 @@ fn scan_library_artifacts(output_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {
     (lib_dirs, libs)
 }
 
-fn build_link_flags(deps: &[FetchedDep]) -> LinkFlags {
+fn build_link_flags(
+    manifest: &Manifest,
+    ctx: &BuildContext,
+    deps: &[FetchedDep],
+) -> LinkFlags {
+    let profile = manifest
+        .resolve_profile(&ctx.profile_name)
+        .unwrap_or_else(|_| {
+            if ctx.release {
+                crate::core::manifest::Profile::release_defaults()
+            } else {
+                crate::core::manifest::Profile::dev_defaults()
+            }
+        });
+
     let mut lib_dirs = Vec::new();
     let mut libs = Vec::new();
     let mut frameworks = Vec::new();
@@ -915,11 +945,23 @@ fn build_link_flags(deps: &[FetchedDep]) -> LinkFlags {
     frameworks.sort();
     frameworks.dedup();
 
+    let linker = profile.linker.as_deref().and_then(|l| match l {
+        "lld" => Some(crate::core::manifest::LinkerKind::Lld),
+        "mold" => Some(crate::core::manifest::LinkerKind::Mold),
+        "gold" => Some(crate::core::manifest::LinkerKind::Gold),
+        _ => None,
+    });
+
     LinkFlags {
         lib_dirs,
         libs,
         frameworks,
-        linker: None,
+        linker,
+        lto: profile.lto,
+        strip: profile.strip,
+        static_runtime: profile.static_runtime,
+        sanitize: profile.sanitize,
+        coverage: profile.coverage,
     }
 }
 

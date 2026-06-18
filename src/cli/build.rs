@@ -11,7 +11,7 @@ use crate::core::lockfile::LockFile;
 use crate::core::manifest::{
     CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
-use crate::core::resolver::resolve_dependencies;
+use crate::core::resolver::resolve_dependencies_with_features;
 use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
@@ -359,7 +359,23 @@ fn resolve_and_fetch(
     let cache_path = cache_dir.join(DEP_CACHE_FILE);
 
     let existing_lock = LockFile::load(&lock_path).ok();
-    let resolved = resolve_dependencies(manifest, existing_lock.as_ref())?;
+
+    let activated_deps = {
+        use crate::core::manifest::ResolvedFeatures;
+        ResolvedFeatures::resolve(
+            manifest,
+            &ctx.features,
+            ctx.no_default_features,
+            ctx.all_features,
+        )
+        .ok()
+        .map(|r| r.activated_deps)
+    };
+    let resolved = resolve_dependencies_with_features(
+        manifest,
+        existing_lock.as_ref(),
+        activated_deps.as_ref(),
+    )?;
 
     let is_fresh = existing_lock
         .as_ref()

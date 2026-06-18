@@ -2004,8 +2004,7 @@ mod tests {
         )
         .unwrap();
 
-        let resolved =
-            ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
         assert!(resolved.enabled.contains("gui"));
         assert!(!resolved.enabled.contains("logging"));
     }
@@ -2027,8 +2026,7 @@ mod tests {
         )
         .unwrap();
 
-        let resolved =
-            ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
         assert!(resolved.enabled.contains("gui"));
         assert!(resolved.enabled.contains("logging"));
     }
@@ -2053,8 +2051,7 @@ mod tests {
         )
         .unwrap();
 
-        let resolved =
-            ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
         assert!(resolved.activated_deps.contains("qt"));
         assert!(resolved.enabled.contains("logging"));
     }
@@ -2076,7 +2073,11 @@ mod tests {
         .unwrap();
 
         let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
-        assert!(resolved.defines.contains(&"ORDO_FEATURE_LOGGING=1".to_string()));
+        assert!(
+            resolved
+                .defines
+                .contains(&"ORDO_FEATURE_LOGGING=1".to_string())
+        );
     }
 
     #[test]

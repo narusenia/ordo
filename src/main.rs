@@ -48,10 +48,12 @@ fn main() -> Result<()> {
             jobs,
             target,
             no_cache,
+            features,
+            no_default_features,
+            all_features,
             locked,
             frozen,
             package,
-            ..
         } => {
             let opts = cli::build::BuildOptions {
                 release,
@@ -59,6 +61,9 @@ fn main() -> Result<()> {
                 jobs,
                 target,
                 no_cache,
+                features,
+                no_default_features,
+                all_features,
                 locked,
                 frozen,
                 verbose: cli.verbose,

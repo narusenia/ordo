@@ -62,8 +62,9 @@ impl LockFile {
             let source_str = source_to_string(&pkg.source);
             match locked.get(pkg.name.as_str()) {
                 Some(existing) => {
-                    if existing.version != pkg.version.to_string() || existing.source != source_str
-                    {
+                    let is_stub = pkg.version == semver::Version::new(0, 0, 0);
+                    let version_matches = is_stub || existing.version == pkg.version.to_string();
+                    if !version_matches || existing.source != source_str {
                         return false;
                     }
                 }

@@ -51,6 +51,7 @@ pub struct BuildContext {
     pub locked: bool,
     pub frozen: bool,
     pub building: HashSet<PathBuf>,
+    pub built_deps: std::collections::HashMap<PathBuf, FetchedDep>,
 }
 
 pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
@@ -82,6 +83,7 @@ pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
         locked: opts.locked,
         frozen: opts.frozen,
         building: HashSet::from([canonical]),
+        built_deps: std::collections::HashMap::new(),
     };
 
     build_project(&mut bctx, ctx)
@@ -120,6 +122,7 @@ fn run_workspace_build(
     fs::create_dir_all(&ws_target_dir).into_diagnostic()?;
 
     let mut last_result = None;
+    let mut built_deps = std::collections::HashMap::new();
 
     let ws_root = root_dir.to_path_buf();
 
@@ -137,9 +140,15 @@ fn run_workspace_build(
                 no_cache: opts.no_cache,
                 locked: opts.locked,
                 frozen: opts.frozen,
-                building: HashSet::from([canonical]),
+                building: HashSet::from([canonical.clone()]),
+                built_deps: std::mem::take(&mut built_deps),
             };
             last_result = Some(build_project(&mut bctx, ctx)?);
+            built_deps = std::mem::take(&mut bctx.built_deps);
+            if let Some(dep) = collect_member_as_fetched_dep(root_dir, &ws_target_dir, profile_name)
+            {
+                built_deps.insert(canonical, dep);
+            }
             continue;
         }
 
@@ -160,10 +169,16 @@ fn run_workspace_build(
             no_cache: opts.no_cache,
             locked: opts.locked,
             frozen: opts.frozen,
-            building: HashSet::from([canonical]),
+            building: HashSet::from([canonical.clone()]),
+            built_deps: std::mem::take(&mut built_deps),
         };
 
         last_result = Some(build_project(&mut bctx, ctx)?);
+        built_deps = std::mem::take(&mut bctx.built_deps);
+
+        if let Some(dep) = collect_member_as_fetched_dep(member_dir, &ws_target_dir, profile_name) {
+            built_deps.insert(canonical, dep);
+        }
     }
 
     last_result.ok_or_else(|| miette::miette!("no members to build"))
@@ -687,6 +702,11 @@ fn fetch_path_dep(
     }
 
     let canonical_dep = fs::canonicalize(dep_dir).into_diagnostic()?;
+
+    if let Some(cached) = ctx.built_deps.get(&canonical_dep) {
+        return Ok(cached.clone());
+    }
+
     if ctx.building.contains(&canonical_dep) {
         bail!(
             "circular path dependency detected: '{}' at '{}'",
@@ -755,8 +775,51 @@ fn fetch_path_dep(
 
     ui.style.success("Built", &format!("{name} (path)"));
 
-    Ok(FetchedDep {
+    let dep = FetchedDep {
         name: name.to_string(),
+        include_dirs,
+        lib_dirs,
+        libs,
+        frameworks,
+    };
+
+    ctx.built_deps.insert(canonical_dep, dep.clone());
+
+    Ok(dep)
+}
+
+fn collect_member_as_fetched_dep(
+    member_dir: &Path,
+    target_dir: &Path,
+    profile_name: &str,
+) -> Option<FetchedDep> {
+    let manifest = Manifest::load(&member_dir.join("Ordo.toml")).ok()?;
+    let pkg = manifest.package.as_ref()?;
+    let pkg_name = &pkg.name;
+
+    let include_dir = member_dir.join("include");
+    let mut include_dirs = if include_dir.exists() {
+        vec![fs::canonicalize(&include_dir).ok()?]
+    } else {
+        vec![fs::canonicalize(member_dir).ok()?]
+    };
+
+    let output_dir = target_dir.join(profile_name).join(pkg_name);
+    let (mut lib_dirs, mut libs) = scan_library_artifacts(&output_dir);
+    let mut frameworks = Vec::new();
+
+    let dep_cache_path = output_dir.join(DEP_CACHE_FILE);
+    if let Ok(transitive) = load_dep_cache(&dep_cache_path) {
+        for t in &transitive {
+            include_dirs.extend(t.include_dirs.iter().cloned());
+            lib_dirs.extend(t.lib_dirs.iter().cloned());
+            libs.extend(t.libs.iter().cloned());
+            frameworks.extend(t.frameworks.iter().cloned());
+        }
+    }
+
+    Some(FetchedDep {
+        name: pkg_name.clone(),
         include_dirs,
         lib_dirs,
         libs,
@@ -1066,6 +1129,7 @@ mod tests {
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx, &ui);
         assert!(result.is_err());
@@ -1089,6 +1153,7 @@ mod tests {
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let result = fetch_path_dep("mylib", tmp.path(), &mut ctx, &ui);
         assert!(result.is_err());
@@ -1124,6 +1189,7 @@ type = "static-library"
             locked: false,
             frozen: false,
             building: HashSet::from([canonical]),
+            built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
         let result = fetch_path_dep("mylib", &dep_dir, &mut ctx, &ui);
@@ -1161,6 +1227,7 @@ type = "static-library"
             locked: false,
             frozen: false,
             building: HashSet::new(),
+            built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
         let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx, &ui).unwrap();

@@ -40,7 +40,8 @@ pub enum ColorMode {
     Never,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum StyleMode {
     #[default]
     Default,

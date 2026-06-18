@@ -16,6 +16,8 @@ pub struct Manifest {
     #[serde(default)]
     pub toolchain: Toolchain,
     #[serde(default)]
+    pub cli: Option<CliConfig>,
+    #[serde(default)]
     pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
     #[serde(default)]
     pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
@@ -111,6 +113,12 @@ impl CppStandard {
             Self::Cpp26 => "c++26",
         }
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct CliConfig {
+    pub style: Option<crate::cli::StyleMode>,
 }
 
 #[derive(Debug, Default, Deserialize)]

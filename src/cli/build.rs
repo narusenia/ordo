@@ -361,17 +361,24 @@ fn resolve_and_fetch(
         );
     }
 
-    let fetched = fetch_dependencies(manifest, ctx, ui)?;
+    let fetch_result = fetch_dependencies(manifest, ctx, ui)?;
 
     let mut lock = LockFile::load(&lock_path).unwrap_or(LockFile {
         version: 1,
         packages: Vec::new(),
     });
     lock.merge(&resolved);
-    lock.save(&lock_path)?;
-    save_dep_cache(&cache_path, &fetched)?;
 
-    Ok(fetched)
+    for pkg in &mut lock.packages {
+        if let Some(ver) = fetch_result.resolved_versions.get(&pkg.name) {
+            pkg.version = ver.clone();
+        }
+    }
+
+    lock.save(&lock_path)?;
+    save_dep_cache(&cache_path, &fetch_result.deps)?;
+
+    Ok(fetch_result.deps)
 }
 
 fn load_dep_cache(path: &Path) -> Result<Vec<FetchedDep>> {
@@ -425,12 +432,18 @@ fn save_dep_cache(path: &Path, deps: &[FetchedDep]) -> Result<()> {
     fs::write(path, content).into_diagnostic()
 }
 
+struct FetchResult {
+    deps: Vec<FetchedDep>,
+    resolved_versions: std::collections::HashMap<String, String>,
+}
+
 fn fetch_dependencies(
     manifest: &Manifest,
     ctx: &mut BuildContext,
     ui: &Context,
-) -> Result<Vec<FetchedDep>> {
+) -> Result<FetchResult> {
     let mut fetched = Vec::new();
+    let mut resolved_versions = std::collections::HashMap::new();
 
     // Pass 1: batch-install all vcpkg deps in one manifest
     let vcpkg_deps: Vec<VcpkgPackageSpec<'_>> = manifest
@@ -479,6 +492,7 @@ fn fetch_dependencies(
                             "Resolved",
                             &format!("{name} v{} (pkg-config)", resolved.version),
                         );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
@@ -503,6 +517,7 @@ fn fetch_dependencies(
                             "Resolved",
                             &format!("{name} (system)"),
                         );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
@@ -535,6 +550,7 @@ fn fetch_dependencies(
                             "Resolved",
                             &format!("{name} v{version} (vcpkg)"),
                         );
+                        resolved_versions.insert(name.clone(), version);
                         dep
                     }
                     Err(e) => {
@@ -561,6 +577,7 @@ fn fetch_dependencies(
                             "Resolved",
                             &format!("{name} v{} (conan)", resolved.version),
                         );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
                         provider.fetch(&resolved)?
                     }
                     Err(e) => {
@@ -587,6 +604,7 @@ fn fetch_dependencies(
                 match provider.resolve_git(name, &git_spec, &on_progress) {
                     Ok(resolved) => {
                         sw.finish_success("Fetched", &format!("{name} {} (git)", resolved.version));
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
                         let script = spec.with.as_ref().map(std::path::Path::new);
                         let script_root =
                             ctx.workspace_root.as_deref().unwrap_or(&ctx.project_root);
@@ -632,6 +650,11 @@ fn fetch_dependencies(
             DependencySource::Path => {
                 let rel_path = spec.path.as_ref().unwrap();
                 let dep_dir = ctx.project_root.join(rel_path);
+                if let Ok(dep_manifest) = Manifest::load(&dep_dir.join("Ordo.toml"))
+                    && let Some(ref pkg) = dep_manifest.package
+                {
+                    resolved_versions.insert(name.clone(), pkg.version.clone());
+                }
                 fetch_path_dep(name, &dep_dir, ctx, ui)?
             }
             _ => continue,
@@ -639,7 +662,10 @@ fn fetch_dependencies(
         fetched.push(dep);
     }
 
-    Ok(fetched)
+    Ok(FetchResult {
+        deps: fetched,
+        resolved_versions,
+    })
 }
 
 fn build_compile_flags(

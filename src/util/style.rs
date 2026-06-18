@@ -411,7 +411,6 @@ impl StyleOutput for CargoLikeStyle {
     fn header(&self, _msg: &str) {}
 
     fn meta(&self, msg: &str) {
-        eprintln!("{msg:>12}", msg = "");
         eprintln!("             {msg}");
     }
 

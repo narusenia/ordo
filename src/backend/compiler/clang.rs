@@ -1,15 +1,6 @@
-use super::{CompileFlags, Compiler, LtoMode, LinkFlags};
-use crate::core::manifest::{Sanitizer, WarningLevel};
+use super::{san_flag, CompileFlags, Compiler, LtoMode, LinkFlags};
+use crate::core::manifest::WarningLevel;
 use std::path::{Path, PathBuf};
-
-fn san_flag(s: &Sanitizer) -> &'static str {
-    match s {
-        Sanitizer::Address => "address",
-        Sanitizer::Undefined => "undefined",
-        Sanitizer::Thread => "thread",
-        Sanitizer::Memory => "memory",
-    }
-}
 
 pub struct ClangCompiler;
 

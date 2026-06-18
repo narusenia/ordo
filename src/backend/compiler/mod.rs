@@ -7,6 +7,15 @@ pub mod msvc;
 use crate::core::manifest::{
     CStandard, CompilerKind, CppStandard, LinkerKind, LtoMode, OptLevel, Sanitizer, WarningLevel,
 };
+
+pub fn san_flag(s: &Sanitizer) -> &'static str {
+    match s {
+        Sanitizer::Address => "address",
+        Sanitizer::Undefined => "undefined",
+        Sanitizer::Thread => "thread",
+        Sanitizer::Memory => "memory",
+    }
+}
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]

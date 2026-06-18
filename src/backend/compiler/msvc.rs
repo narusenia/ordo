@@ -70,10 +70,6 @@ impl Compiler for MsvcCompiler {
             }
         }
 
-        if flags.coverage {
-            args.push("/PROFILE".to_string());
-        }
-
         for def in &flags.defines {
             args.push(format!("/D{def}"));
         }

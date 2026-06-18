@@ -1,9 +1,10 @@
-use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use std::fs;
 use std::path::Path;
 
-pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
+use super::context::Context;
+
+pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if manifest_path.exists() {
         bail!("Ordo.toml already exists in this directory");
@@ -13,7 +14,7 @@ pub fn run(dir: &Path, _ctx: &super::context::Context) -> Result<()> {
     let name = detect_project_name(dir);
 
     fs::write(
-        &manifest_path,
+        manifest_path,
         format!(
             r#"[package]
 name = "{name}"
@@ -24,28 +25,27 @@ type = "{package_type}"
     )
     .into_diagnostic()?;
 
-    style::success(
-        "Initialized",
-        &format!("ordo project `{name}` ({package_type})"),
-    );
+    ctx.style
+        .success("Created", &format!("Ordo.toml ({package_type} `{name}`)"));
 
     Ok(())
 }
 
 fn detect_project_type(dir: &Path) -> &'static str {
-    let candidates = ["src/main.cpp", "src/main.c", "main.cpp", "main.c"];
-    for c in &candidates {
-        if dir.join(c).exists() {
-            return "executable";
-        }
+    let src = dir.join("src");
+    if src.join("main.cpp").exists() || src.join("main.c").exists() || src.join("main.cc").exists()
+    {
+        "executable"
+    } else {
+        "static-library"
     }
-    "static-library"
 }
 
 fn detect_project_name(dir: &Path) -> String {
     dir.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unnamed".to_string())
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed")
+        .to_string()
 }
 
 #[cfg(test)]

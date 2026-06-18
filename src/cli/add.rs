@@ -1,10 +1,10 @@
+use super::context::Context;
 use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::expand_git_shorthand;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
 use crate::backend::provider::{Provider, ResolvedDep};
-use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use promptuity::prompts::{Select, SelectOption};
 use promptuity::themes::MinimalTheme;
@@ -70,7 +70,7 @@ pub fn run(
     provider_flag: Option<&str>,
     no_verify: bool,
     with: Option<&str>,
-    _ctx: &super::context::Context,
+    ctx: &Context,
 ) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
     let parsed = parse_spec(spec);
@@ -83,7 +83,7 @@ pub fn run(
     if provider == "git" {
         let url = expand_git_shorthand(&parsed.name);
         let dep_name = git_repo_name(&parsed.name);
-        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref(), with);
+        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref(), with, ctx);
     }
 
     if with.is_some() {
@@ -96,6 +96,7 @@ pub fn run(
         &parsed.name,
         parsed.version.as_deref(),
         !no_verify,
+        ctx,
     )
 }
 
@@ -113,6 +114,7 @@ fn run_inner_git(
     url: &str,
     tag: Option<&str>,
     with: Option<&str>,
+    ctx: &Context,
 ) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -146,7 +148,8 @@ fn run_inner_git(
 
     let tag_str = tag.map(|t| format!(" @{t}")).unwrap_or_default();
     let with_str = with.map(|w| format!(" with {w}")).unwrap_or_default();
-    style::success("Added", &format!("{name}{tag_str} (git){with_str}"));
+    ctx.style
+        .success("Added", &format!("{name}{tag_str} (git){with_str}"));
 
     Ok(())
 }
@@ -157,6 +160,7 @@ fn run_inner(
     name: &str,
     version: Option<&str>,
     resolve: bool,
+    ctx: &Context,
 ) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -177,7 +181,7 @@ fn run_inner(
     }
 
     let resolved_version = if resolve {
-        verify_resolve(provider, name, version)?
+        verify_resolve(provider, name, version, ctx)?
     } else {
         version.map(|v| v.to_string())
     };
@@ -191,13 +195,21 @@ fn run_inner(
     let version_str = effective_version
         .map(|v| format!(" v{v}"))
         .unwrap_or_default();
-    style::success("Added", &format!("{name}{version_str} ({provider})"));
+    ctx.style
+        .success("Added", &format!("{name}{version_str} ({provider})"));
 
     Ok(())
 }
 
-fn verify_resolve(provider: &str, name: &str, version: Option<&str>) -> Result<Option<String>> {
-    let sw = style::create_spinner_with_detail(&format!("Resolving {name} ({provider})…"));
+fn verify_resolve(
+    provider: &str,
+    name: &str,
+    version: Option<&str>,
+    ctx: &Context,
+) -> Result<Option<String>> {
+    let sw = ctx
+        .style
+        .create_spinner_with_detail(&format!("Resolving {name} ({provider})…"));
     let on_progress = |msg: &str| {
         sw.set_detail(msg);
     };
@@ -330,7 +342,8 @@ type = "executable"
     #[test]
     fn add_pkg_config_dep() {
         let tmp = setup_project();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
@@ -341,7 +354,8 @@ type = "executable"
     #[test]
     fn add_system_dep_with_version() {
         let tmp = setup_project();
-        run_inner(tmp.path(), "system", "m", None, false).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run_inner(tmp.path(), "system", "m", None, false, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("provider = \"system\""));
@@ -350,7 +364,8 @@ type = "executable"
     #[test]
     fn add_vcpkg_dep_with_version() {
         let tmp = setup_project();
-        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false).unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("version = \"11\""));
@@ -360,21 +375,24 @@ type = "executable"
     #[test]
     fn add_duplicate_fails() {
         let tmp = setup_project();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false).unwrap();
-        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false);
+        let ctx = crate::cli::context::Context::default_for_test();
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx).unwrap();
+        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx);
         assert!(result.is_err());
     }
 
     #[test]
     fn add_unknown_provider_fails() {
         let tmp = setup_project();
-        let result = run_inner(tmp.path(), "npm", "lodash", None, false);
+        let ctx = crate::cli::context::Context::default_for_test();
+        let result = run_inner(tmp.path(), "npm", "lodash", None, false, &ctx);
         assert!(result.is_err());
     }
 
     #[test]
     fn add_creates_dependencies_section() {
         let tmp = TempDir::new().unwrap();
+        let ctx = crate::cli::context::Context::default_for_test();
         std::fs::write(
             tmp.path().join("Ordo.toml"),
             r#"[package]
@@ -385,7 +403,7 @@ type = "executable"
         )
         .unwrap();
 
-        run_inner(tmp.path(), "system", "pthread", None, false).unwrap();
+        run_inner(tmp.path(), "system", "pthread", None, false, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
@@ -418,12 +436,14 @@ type = "executable"
     #[test]
     fn add_git_dep_with_tag() {
         let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
         run_inner_git(
             tmp.path(),
             "fmt",
             "https://github.com/fmtlib/fmt",
             Some("11.1.0"),
             None,
+            &ctx,
         )
         .unwrap();
 
@@ -435,12 +455,14 @@ type = "executable"
     #[test]
     fn add_git_dep_without_tag() {
         let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
         run_inner_git(
             tmp.path(),
             "fmt",
             "https://github.com/fmtlib/fmt",
             None,
             None,
+            &ctx,
         )
         .unwrap();
 

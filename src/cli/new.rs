@@ -1,5 +1,4 @@
 use crate::cli::ProjectLang;
-use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use promptuity::prompts::{Input, Select, SelectOption};
 use promptuity::themes::MinimalTheme;
@@ -8,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub fn run_interactive(base: &Path, no_git: bool, _ctx: &super::context::Context) -> Result<()> {
+pub fn run_interactive(base: &Path, no_git: bool, ctx: &super::context::Context) -> Result<()> {
     let mut term = Term::default();
     let mut theme = MinimalTheme::default();
     let mut p = Promptuity::new(&mut term, &mut theme);
@@ -49,7 +48,7 @@ pub fn run_interactive(base: &Path, no_git: bool, _ctx: &super::context::Context
 
     p.finish().into_diagnostic()?;
 
-    run(base, &name, lib, lang, no_git, _ctx)
+    run(base, &name, lib, lang, no_git, ctx)
 }
 
 pub fn run(
@@ -58,7 +57,7 @@ pub fn run(
     lib: bool,
     lang: ProjectLang,
     no_git: bool,
-    _ctx: &super::context::Context,
+    ctx: &super::context::Context,
 ) -> Result<()> {
     let project_dir = base.join(name);
     if project_dir.exists() {
@@ -84,11 +83,12 @@ pub fn run(
         ProjectLang::C => "C",
         ProjectLang::Cpp => "C++",
     };
-    style::success("Created", &format!("{lang_label} {kind} project `{name}`"));
+    ctx.style
+        .success("Created", &format!("{lang_label} {kind} project `{name}`"));
 
     let tree = build_tree(&project_dir, lib, lang);
     for line in &tree {
-        style::tree_line(line);
+        ctx.style.tree_line(line);
     }
 
     Ok(())

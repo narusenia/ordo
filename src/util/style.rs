@@ -18,100 +18,12 @@ pub const ICON_WARNING: &str = "⚠";
 pub const ICON_SKIP: &str = "⊘";
 pub const ICON_RUN: &str = "▶";
 
-pub fn success(verb: &str, message: &str) {
-    if verb.is_empty() {
-        eprintln!("{} {message}", GREEN_BOLD.apply_to(ICON_SUCCESS));
-    } else {
-        eprintln!(
-            "{} {} {message}",
-            GREEN_BOLD.apply_to(ICON_SUCCESS),
-            GREEN_BOLD.apply_to(verb)
-        );
-    }
-}
-
-pub fn error(verb: &str, message: &str) {
-    if verb.is_empty() {
-        eprintln!("{} {message}", RED_BOLD.apply_to(ICON_FAILURE));
-    } else {
-        eprintln!(
-            "{} {} {message}",
-            RED_BOLD.apply_to(ICON_FAILURE),
-            RED_BOLD.apply_to(verb)
-        );
-    }
-}
-
-pub fn warn(verb: &str, message: &str) {
-    eprintln!(
-        "{} {} {message}",
-        YELLOW_BOLD.apply_to(ICON_WARNING),
-        YELLOW_BOLD.apply_to(verb)
-    );
-}
-
-pub fn skip(verb: &str, message: &str) {
-    eprintln!(
-        "{} {} {message}",
-        DIM.apply_to(ICON_SKIP),
-        DIM.apply_to(verb)
-    );
-}
-
-pub fn run_icon(verb: &str, message: &str) {
-    eprintln!(
-        "{} {} {message}",
-        GREEN_BOLD.apply_to(ICON_RUN),
-        GREEN_BOLD.apply_to(verb)
-    );
-}
-
-pub fn header(message: &str) {
-    eprintln!();
-    eprintln!(
-        "{} {}",
-        CYAN_BOLD.apply_to("▸"),
-        CYAN_BOLD.apply_to(message)
-    );
-}
-
-pub fn meta(message: &str) {
-    eprintln!("  {}", DIM.apply_to(message));
-}
-
-pub fn tree_line(line: &str) {
-    eprintln!("  {}", DIM.apply_to(line));
-}
-
-pub fn tree_detail(prefix: &str, detail: &str) {
-    eprintln!("{prefix}{}", DIM.apply_to(detail));
-}
-
-pub fn verbose_cmd(cmd: &str) {
-    eprintln!("  {}", DIM.apply_to(format!("$ {cmd}")));
-}
-
-pub fn summary_bar() {
-    eprintln!(
-        "{}",
-        DIM.apply_to("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    );
-}
-
-pub fn create_spinner(message: &str) -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
-            .template(&format!(
-                "{{spinner}} {} {{msg}}",
-                CYAN_BOLD.apply_to("{prefix}")
-            ))
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    pb.enable_steady_tick(Duration::from_millis(80));
-    pb.set_message(message.to_string());
-    pb
+pub struct BuildStep {
+    pub action: String,
+    pub file: String,
+    pub current: u32,
+    pub total: u32,
+    pub done_verb: &'static str,
 }
 
 pub struct SpinnerWithDetail {
@@ -155,73 +67,212 @@ impl SpinnerWithDetail {
     }
 }
 
-pub fn create_spinner_with_detail(message: &str) -> SpinnerWithDetail {
-    let mp = MultiProgress::new();
+pub trait StyleOutput {
+    // --- Text output ---
+    fn success(&self, verb: &str, msg: &str);
+    fn error(&self, verb: &str, msg: &str);
+    fn warn(&self, verb: &str, msg: &str);
+    fn skip(&self, verb: &str, msg: &str);
+    fn run_icon(&self, verb: &str, msg: &str);
+    fn header(&self, msg: &str);
+    fn meta(&self, msg: &str);
+    fn tree_line(&self, line: &str);
+    fn tree_detail(&self, prefix: &str, detail: &str);
+    fn verbose_cmd(&self, cmd: &str);
+    fn summary_bar(&self);
 
-    let spinner = mp.add(ProgressBar::new_spinner());
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
-            .template("{spinner} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(80));
-    spinner.set_message(message.to_string());
+    // --- Spinners / progress ---
+    fn create_spinner(&self, msg: &str) -> ProgressBar;
+    fn create_spinner_with_detail(&self, msg: &str) -> SpinnerWithDetail;
+    fn create_multi_progress(&self) -> MultiProgress;
+    fn spinner_in_multi(&self, mp: &MultiProgress, prefix: &str, msg: &str) -> ProgressBar;
+    fn finish_spinner_success(&self, pb: &ProgressBar, verb: &str, msg: &str);
+    fn finish_spinner_error(&self, pb: &ProgressBar, verb: &str, msg: &str);
 
-    let detail = mp.add(ProgressBar::new_spinner());
-    detail.set_style(
-        ProgressStyle::default_spinner()
-            .template("{msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    detail.enable_steady_tick(Duration::from_millis(80));
+    // --- Build step display ---
+    fn display_build_step(&self, step: &BuildStep, spinner: &ProgressBar);
+    fn finish_build_step(&self, step: &BuildStep);
+    fn finish_build_failed(&self, step: &BuildStep);
+}
 
-    SpinnerWithDetail {
-        mp,
-        spinner,
-        detail,
+// === DefaultStyle ===
+
+pub struct DefaultStyle;
+
+impl StyleOutput for DefaultStyle {
+    fn success(&self, verb: &str, msg: &str) {
+        if verb.is_empty() {
+            eprintln!("{} {msg}", GREEN_BOLD.apply_to(ICON_SUCCESS));
+        } else {
+            eprintln!(
+                "{} {} {msg}",
+                GREEN_BOLD.apply_to(ICON_SUCCESS),
+                GREEN_BOLD.apply_to(verb)
+            );
+        }
     }
-}
 
-pub fn create_multi_progress() -> MultiProgress {
-    MultiProgress::new()
-}
+    fn error(&self, verb: &str, msg: &str) {
+        if verb.is_empty() {
+            eprintln!("{} {msg}", RED_BOLD.apply_to(ICON_FAILURE));
+        } else {
+            eprintln!(
+                "{} {} {msg}",
+                RED_BOLD.apply_to(ICON_FAILURE),
+                RED_BOLD.apply_to(verb)
+            );
+        }
+    }
 
-pub fn spinner_in_multi(mp: &MultiProgress, prefix: &str, message: &str) -> ProgressBar {
-    let style = ProgressStyle::default_spinner()
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
-        .template("{spinner} {wide_msg}")
-        .unwrap_or_else(|_| ProgressStyle::default_spinner());
+    fn warn(&self, verb: &str, msg: &str) {
+        eprintln!(
+            "{} {} {msg}",
+            YELLOW_BOLD.apply_to(ICON_WARNING),
+            YELLOW_BOLD.apply_to(verb)
+        );
+    }
 
-    let pb = mp.add(ProgressBar::new_spinner());
-    pb.set_style(style);
-    pb.set_message(format!("{} {message}", CYAN_BOLD.apply_to(prefix)));
-    pb.enable_steady_tick(Duration::from_millis(80));
-    pb
-}
+    fn skip(&self, verb: &str, msg: &str) {
+        eprintln!("{} {} {msg}", DIM.apply_to(ICON_SKIP), DIM.apply_to(verb));
+    }
 
-pub fn finish_spinner_success(pb: &ProgressBar, verb: &str, message: &str) {
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("{wide_msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    pb.finish_with_message(format!(
-        "{} {} {message}",
-        GREEN_BOLD.apply_to(ICON_SUCCESS),
-        GREEN_BOLD.apply_to(verb),
-    ));
-}
+    fn run_icon(&self, verb: &str, msg: &str) {
+        eprintln!(
+            "{} {} {msg}",
+            GREEN_BOLD.apply_to(ICON_RUN),
+            GREEN_BOLD.apply_to(verb)
+        );
+    }
 
-pub fn finish_spinner_error(pb: &ProgressBar, verb: &str, message: &str) {
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("{wide_msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-    );
-    pb.finish_with_message(format!(
-        "{} {} {message}",
-        RED_BOLD.apply_to(ICON_FAILURE),
-        RED_BOLD.apply_to(verb),
-    ));
+    fn header(&self, msg: &str) {
+        eprintln!();
+        eprintln!("{} {}", CYAN_BOLD.apply_to("▸"), CYAN_BOLD.apply_to(msg));
+    }
+
+    fn meta(&self, msg: &str) {
+        eprintln!("  {}", DIM.apply_to(msg));
+    }
+
+    fn tree_line(&self, line: &str) {
+        eprintln!("  {}", DIM.apply_to(line));
+    }
+
+    fn tree_detail(&self, prefix: &str, detail: &str) {
+        eprintln!("{prefix}{}", DIM.apply_to(detail));
+    }
+
+    fn verbose_cmd(&self, cmd: &str) {
+        eprintln!("  {}", DIM.apply_to(format!("$ {cmd}")));
+    }
+
+    fn summary_bar(&self) {
+        eprintln!(
+            "{}",
+            DIM.apply_to("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        );
+    }
+
+    fn create_spinner(&self, msg: &str) -> ProgressBar {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
+                .template(&format!(
+                    "{{spinner}} {} {{msg}}",
+                    CYAN_BOLD.apply_to("{prefix}")
+                ))
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        pb.enable_steady_tick(Duration::from_millis(80));
+        pb.set_message(msg.to_string());
+        pb
+    }
+
+    fn create_spinner_with_detail(&self, msg: &str) -> SpinnerWithDetail {
+        let mp = MultiProgress::new();
+
+        let spinner = mp.add(ProgressBar::new_spinner());
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
+                .template("{spinner} {msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        spinner.enable_steady_tick(Duration::from_millis(80));
+        spinner.set_message(msg.to_string());
+
+        let detail = mp.add(ProgressBar::new_spinner());
+        detail.set_style(
+            ProgressStyle::default_spinner()
+                .template("{msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        detail.enable_steady_tick(Duration::from_millis(80));
+
+        SpinnerWithDetail {
+            mp,
+            spinner,
+            detail,
+        }
+    }
+
+    fn create_multi_progress(&self) -> MultiProgress {
+        MultiProgress::new()
+    }
+
+    fn spinner_in_multi(&self, mp: &MultiProgress, prefix: &str, msg: &str) -> ProgressBar {
+        let style = ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
+            .template("{spinner} {wide_msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner());
+
+        let pb = mp.add(ProgressBar::new_spinner());
+        pb.set_style(style);
+        pb.set_message(format!("{} {msg}", CYAN_BOLD.apply_to(prefix)));
+        pb.enable_steady_tick(Duration::from_millis(80));
+        pb
+    }
+
+    fn finish_spinner_success(&self, pb: &ProgressBar, verb: &str, msg: &str) {
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{wide_msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        pb.finish_with_message(format!(
+            "{} {} {msg}",
+            GREEN_BOLD.apply_to(ICON_SUCCESS),
+            GREEN_BOLD.apply_to(verb),
+        ));
+    }
+
+    fn finish_spinner_error(&self, pb: &ProgressBar, verb: &str, msg: &str) {
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{wide_msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        pb.finish_with_message(format!(
+            "{} {} {msg}",
+            RED_BOLD.apply_to(ICON_FAILURE),
+            RED_BOLD.apply_to(verb),
+        ));
+    }
+
+    fn display_build_step(&self, step: &BuildStep, spinner: &ProgressBar) {
+        let progress = format!("[{}/{}]", step.current, step.total);
+        spinner.reset();
+        spinner.enable_steady_tick(Duration::from_millis(80));
+        spinner.set_message(format!("{} {} {progress}", step.action, step.file));
+    }
+
+    fn finish_build_step(&self, step: &BuildStep) {
+        let progress = format!("[{}/{}]", step.current, step.total);
+        self.success(step.done_verb, &format!("{} {progress}", step.file));
+    }
+
+    fn finish_build_failed(&self, step: &BuildStep) {
+        let progress = format!("[{}/{}]", step.current, step.total);
+        self.error("Failed", &format!("{} {progress}", step.file));
+    }
 }

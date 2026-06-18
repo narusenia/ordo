@@ -2,7 +2,6 @@ use super::context::Context;
 use crate::cli::build::{BuildOptions, BuildResult};
 use crate::core::manifest::{Manifest, PackageType};
 use crate::core::workspace::Workspace;
-use crate::util::style;
 use miette::{IntoDiagnostic, Result, bail};
 use std::process::Command;
 
@@ -112,7 +111,8 @@ fn run_single(args: &[String], release: bool, package: Option<&str>, ctx: &Conte
         bail!("built binary not found at {}", output_path.display());
     }
 
-    style::run_icon("Running", &format!("{}", output_path.display()));
+    ctx.style
+        .run_icon("Running", &format!("{}", output_path.display()));
 
     let status = Command::new(&output_path)
         .args(args)

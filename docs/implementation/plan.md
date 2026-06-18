@@ -12,7 +12,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 3/3 | Lua scripting for git deps, sandbox, caching |
 | M2.7 | Dependency Enhancements | GH #23 ~ #28 | 0/6 | alias/link_name, multi-add, new providers, platform-conditional deps |
-| M3 | Workspace & Profiles | TASK-015 ~ 019 | 2/5 | Workspace support, full profile options, features |
+| M3 | Workspace & Profiles | TASK-015 ~ 019 | 3/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
 | M6 | Packaging & Ecosystem | TASK-030 ~ 036 | 0/7 | Install, package, registry, IDE generation, CI, doctor, self update |
@@ -68,7 +68,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 |------|-------|--------|------|
 | TASK-015 | Workspace Discovery and Configuration | Done | L |
 | TASK-016 | Workspace Build Integration | Done | L |
-| TASK-017 | Full Build Profile Support | Todo | M |
+| TASK-017 | Full Build Profile Support | Done | M |
 | TASK-018 | Feature Flags | Todo | M |
 | TASK-019 | Dev Dependencies | Todo | S |
 
@@ -156,7 +156,7 @@ M6: Packaging & Ecosystem
 | TASK-014 | Done | REQ-DEPS-009 |
 | TASK-015 | Todo | REQ-WORK-001, REQ-WORK-002, REQ-WORK-003 |
 | TASK-016 | Todo | REQ-WORK-004, REQ-WORK-005 |
-| TASK-017 | Todo | REQ-BUILD-004 (full), REQ-BUILD-005 |
+| TASK-017 | Done | REQ-BUILD-004 (full), REQ-BUILD-005 |
 | TASK-018 | Todo | REQ-PROJ-006 |
 | TASK-019 | Todo | REQ-DEPS-002 |
 | TASK-020 | Todo | REQ-TEST-001, REQ-TEST-002, REQ-TEST-003, REQ-TEST-004 |

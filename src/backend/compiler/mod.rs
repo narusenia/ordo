@@ -70,7 +70,6 @@ pub struct LinkFlags {
     pub coverage: bool,
 }
 
-
 pub trait Compiler {
     fn name(&self) -> &str;
     fn c_executable(&self) -> &str;

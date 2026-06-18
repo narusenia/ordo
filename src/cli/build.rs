@@ -922,11 +922,7 @@ fn scan_library_artifacts(output_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {
     (lib_dirs, libs)
 }
 
-fn build_link_flags(
-    manifest: &Manifest,
-    ctx: &BuildContext,
-    deps: &[FetchedDep],
-) -> LinkFlags {
+fn build_link_flags(manifest: &Manifest, ctx: &BuildContext, deps: &[FetchedDep]) -> LinkFlags {
     let profile = manifest
         .resolve_profile(&ctx.profile_name)
         .unwrap_or_else(|_| {

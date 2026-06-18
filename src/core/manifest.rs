@@ -763,15 +763,11 @@ impl Manifest {
                 if self.profile.contains_key(other) {
                     return Err(ManifestError::ValidationError {
                         message: format!("profile '{other}' must specify 'inherits'"),
-                        help: Some(
-                            "add inherits = \"dev\" or inherits = \"release\"".to_string(),
-                        ),
+                        help: Some("add inherits = \"dev\" or inherits = \"release\"".to_string()),
                     });
                 }
                 return Err(ManifestError::ValidationError {
-                    message: format!(
-                        "profile '{other}' referenced by 'inherits' is not defined"
-                    ),
+                    message: format!("profile '{other}' referenced by 'inherits' is not defined"),
                     help: Some(format!(
                         "define [profile.{other}] or use a built-in name (dev, release, bench)"
                     )),
@@ -1487,7 +1483,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(m.resolve_profile("debug").unwrap(), m.resolve_profile("dev").unwrap());
+        assert_eq!(
+            m.resolve_profile("debug").unwrap(),
+            m.resolve_profile("dev").unwrap()
+        );
     }
 
     #[test]

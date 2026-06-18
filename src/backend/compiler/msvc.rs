@@ -1,4 +1,4 @@
-use super::{CompileFlags, Compiler, LtoMode, LinkFlags};
+use super::{CompileFlags, Compiler, LinkFlags, LtoMode};
 use crate::core::manifest::{CppStandard, OptLevel, WarningLevel};
 use std::path::{Path, PathBuf};
 

@@ -263,11 +263,16 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
         manifest.package().package_type,
     );
 
-    let profile_desc = if ctx.profile_name == "release" {
-        "optimized"
-    } else {
-        "unoptimized + debuginfo"
-    };
+    let profile = manifest
+        .resolve_profile(&ctx.profile_name)
+        .unwrap_or_else(|_| {
+            if ctx.release {
+                crate::core::manifest::Profile::release_defaults()
+            } else {
+                crate::core::manifest::Profile::dev_defaults()
+            }
+        });
+    let profile_desc = profile.display_desc();
     ui.style.success(
         "Finished",
         &format!(

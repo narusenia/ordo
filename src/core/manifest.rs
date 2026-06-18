@@ -401,6 +401,29 @@ impl Profile {
         }
     }
 
+    pub fn display_desc(&self) -> String {
+        let mut parts = Vec::new();
+
+        match self.opt_level {
+            OptLevel::O0 => parts.push("unoptimized"),
+            OptLevel::O1 => parts.push("basic optimization"),
+            OptLevel::O2 => parts.push("optimized"),
+            OptLevel::O3 => parts.push("max optimization"),
+            OptLevel::Os => parts.push("size-optimized"),
+            OptLevel::Oz => parts.push("min-size"),
+        }
+
+        if self.debug {
+            parts.push("debuginfo");
+        }
+
+        if self.lto != LtoMode::Off {
+            parts.push("lto");
+        }
+
+        parts.join(" + ")
+    }
+
     fn merge_from(&mut self, config: &ProfileConfig) {
         if let Some(v) = config.opt_level {
             self.opt_level = v;

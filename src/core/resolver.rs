@@ -20,6 +20,14 @@ pub fn resolve_dependencies(
     manifest: &Manifest,
     lock: Option<&LockFile>,
 ) -> Result<Vec<ResolvedPackage>> {
+    resolve_dependencies_with_features(manifest, lock, None)
+}
+
+pub fn resolve_dependencies_with_features(
+    manifest: &Manifest,
+    lock: Option<&LockFile>,
+    activated_optional_deps: Option<&std::collections::BTreeSet<String>>,
+) -> Result<Vec<ResolvedPackage>> {
     if manifest.dependencies.is_empty() {
         return Ok(Vec::new());
     }
@@ -45,6 +53,16 @@ pub fn resolve_dependencies(
         .unwrap_or_default();
 
     for (name, spec) in &manifest.dependencies {
+        if spec.optional {
+            if let Some(activated) = activated_optional_deps {
+                if !activated.contains(name) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        }
+
         let range = spec_to_range(name, spec)?;
         root_deps.push((name.clone(), range.clone()));
         source_map.insert(name.clone(), spec.source_kind());

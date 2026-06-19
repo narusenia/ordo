@@ -18,6 +18,8 @@ pub struct Manifest {
     #[serde(default)]
     pub cli: Option<CliConfig>,
     #[serde(default)]
+    pub features: FeatureConfig,
+    #[serde(default)]
     pub profile: std::collections::BTreeMap<String, ProfileConfig>,
     #[serde(default)]
     pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
@@ -167,6 +169,133 @@ impl fmt::Display for LinkerKind {
             Self::Gold => write!(f, "gold"),
             Self::Default => write!(f, "default"),
         }
+    }
+}
+
+// --- Feature configuration ---
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FeatureConfig {
+    #[serde(default)]
+    pub default: Vec<String>,
+    #[serde(default, flatten)]
+    pub features: std::collections::BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub config: Option<FeaturePrefixConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FeaturePrefixConfig {
+    #[serde(default = "FeaturePrefixConfig::default_prefix")]
+    pub prefix: String,
+}
+
+impl FeaturePrefixConfig {
+    fn default_prefix() -> String {
+        "ORDO_FEATURE_".to_string()
+    }
+}
+
+impl FeatureConfig {
+    pub fn prefix(&self) -> &str {
+        self.config
+            .as_ref()
+            .map(|c| c.prefix.as_str())
+            .unwrap_or("ORDO_FEATURE_")
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.default.is_empty() && self.features.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedFeatures {
+    pub enabled: std::collections::BTreeSet<String>,
+    pub activated_deps: std::collections::BTreeSet<String>,
+    pub defines: Vec<String>,
+}
+
+impl ResolvedFeatures {
+    pub fn resolve(
+        manifest: &Manifest,
+        cli_features: &[String],
+        no_default_features: bool,
+        all_features: bool,
+    ) -> Result<Self, ManifestError> {
+        let feature_map = &manifest.features;
+        let mut enabled = std::collections::BTreeSet::new();
+        let mut activated_deps = std::collections::BTreeSet::new();
+
+        if all_features {
+            for name in feature_map.features.keys() {
+                enabled.insert(name.clone());
+            }
+            if !feature_map.default.is_empty() {
+                for f in &feature_map.default {
+                    enabled.insert(f.clone());
+                }
+            }
+        } else {
+            if !no_default_features {
+                for f in &feature_map.default {
+                    enabled.insert(f.clone());
+                }
+            }
+            for f in cli_features {
+                enabled.insert(f.clone());
+            }
+        }
+
+        let mut queue: Vec<String> = enabled.iter().cloned().collect();
+        let mut visited = std::collections::HashSet::new();
+
+        while let Some(feat) = queue.pop() {
+            if !visited.insert(feat.clone()) {
+                continue;
+            }
+
+            if let Some(deps) = feature_map.features.get(&feat) {
+                for dep in deps {
+                    if let Some(dep_name) = dep.strip_prefix("dep:") {
+                        activated_deps.insert(dep_name.to_string());
+                    } else {
+                        if !enabled.contains(dep) {
+                            enabled.insert(dep.clone());
+                            queue.push(dep.clone());
+                        }
+                    }
+                }
+            } else if !feature_map.default.is_empty() || !feature_map.features.is_empty() {
+                return Err(ManifestError::ValidationError {
+                    message: format!("unknown feature '{feat}'"),
+                    help: Some(format!(
+                        "available features: {}",
+                        feature_map
+                            .features
+                            .keys()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                });
+            }
+        }
+
+        let prefix = feature_map.prefix();
+        let defines = enabled
+            .iter()
+            .map(|f| {
+                let upper = f.to_uppercase().replace('-', "_");
+                format!("{prefix}{upper}=1")
+            })
+            .collect();
+
+        Ok(Self {
+            enabled,
+            activated_deps,
+            defines,
+        })
     }
 }
 
@@ -1763,5 +1892,252 @@ mod tests {
         assert_eq!(p.pch.as_deref(), Some("pch/all.h"));
         assert_eq!(p.unity, Some(true));
         assert_eq!(p.parallel, Some(8));
+    }
+
+    // --- Feature tests ---
+
+    #[test]
+    fn feature_parsing_basic() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+            gui = ["dep:qt", "logging"]
+            simd = []
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(m.features.default, vec!["logging"]);
+        assert!(m.features.features.contains_key("logging"));
+        assert!(m.features.features.contains_key("gui"));
+        assert!(m.features.features.contains_key("simd"));
+        assert_eq!(m.features.features["gui"], vec!["dep:qt", "logging"]);
+    }
+
+    #[test]
+    fn feature_resolve_defaults() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+            gui = []
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
+        assert!(resolved.enabled.contains("logging"));
+        assert!(!resolved.enabled.contains("gui"));
+    }
+
+    #[test]
+    fn feature_resolve_no_default() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], true, false).unwrap();
+        assert!(resolved.enabled.is_empty());
+    }
+
+    #[test]
+    fn feature_resolve_all() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+            gui = []
+            simd = []
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], false, true).unwrap();
+        assert!(resolved.enabled.contains("logging"));
+        assert!(resolved.enabled.contains("gui"));
+        assert!(resolved.enabled.contains("simd"));
+    }
+
+    #[test]
+    fn feature_resolve_cli_features() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = []
+            logging = []
+            gui = []
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        assert!(resolved.enabled.contains("gui"));
+        assert!(!resolved.enabled.contains("logging"));
+    }
+
+    #[test]
+    fn feature_resolve_transitive() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = []
+            logging = []
+            gui = ["logging"]
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        assert!(resolved.enabled.contains("gui"));
+        assert!(resolved.enabled.contains("logging"));
+    }
+
+    #[test]
+    fn feature_resolve_dep_activation() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = []
+            gui = ["dep:qt", "logging"]
+            logging = []
+
+            [dependencies]
+            qt = { provider = "vcpkg", optional = true }
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &["gui".to_string()], false, false).unwrap();
+        assert!(resolved.activated_deps.contains("qt"));
+        assert!(resolved.enabled.contains("logging"));
+    }
+
+    #[test]
+    fn feature_resolve_defines() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
+        assert!(
+            resolved
+                .defines
+                .contains(&"ORDO_FEATURE_LOGGING=1".to_string())
+        );
+    }
+
+    #[test]
+    fn feature_custom_prefix() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = ["logging"]
+            logging = []
+
+            [features.config]
+            prefix = "MYAPP_"
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
+        assert!(resolved.defines.contains(&"MYAPP_LOGGING=1".to_string()));
+    }
+
+    #[test]
+    fn feature_unknown_errors() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [features]
+            default = []
+            logging = []
+            "#,
+        )
+        .unwrap();
+
+        let err =
+            ResolvedFeatures::resolve(&m, &["nonexistent".to_string()], false, false).unwrap_err();
+        assert!(err.to_string().contains("unknown feature"), "got: {err}");
+    }
+
+    #[test]
+    fn feature_no_features_section() {
+        let m = parse(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+            "#,
+        )
+        .unwrap();
+
+        let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
+        assert!(resolved.enabled.is_empty());
+        assert!(resolved.defines.is_empty());
     }
 }

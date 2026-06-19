@@ -11,7 +11,7 @@ use crate::core::lockfile::LockFile;
 use crate::core::manifest::{
     CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
-use crate::core::resolver::resolve_dependencies;
+use crate::core::resolver::resolve_dependencies_with_features;
 use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::collections::HashSet;
@@ -28,6 +28,9 @@ pub struct BuildOptions {
     pub jobs: Option<u32>,
     pub target: Option<String>,
     pub no_cache: bool,
+    pub features: Vec<String>,
+    pub no_default_features: bool,
+    pub all_features: bool,
     pub locked: bool,
     pub frozen: bool,
     pub verbose: u8,
@@ -48,6 +51,9 @@ pub struct BuildContext {
     pub jobs: Option<u32>,
     pub verbose: u8,
     pub no_cache: bool,
+    pub features: Vec<String>,
+    pub no_default_features: bool,
+    pub all_features: bool,
     pub locked: bool,
     pub frozen: bool,
     pub building: HashSet<PathBuf>,
@@ -80,6 +86,9 @@ pub fn run(opts: &BuildOptions, ctx: &Context) -> Result<BuildResult> {
         jobs: opts.jobs,
         verbose: opts.verbose,
         no_cache: opts.no_cache,
+        features: opts.features.clone(),
+        no_default_features: opts.no_default_features,
+        all_features: opts.all_features,
         locked: opts.locked,
         frozen: opts.frozen,
         building: HashSet::from([canonical]),
@@ -138,6 +147,9 @@ fn run_workspace_build(
                 jobs: opts.jobs,
                 verbose: opts.verbose,
                 no_cache: opts.no_cache,
+                features: opts.features.clone(),
+                no_default_features: opts.no_default_features,
+                all_features: opts.all_features,
                 locked: opts.locked,
                 frozen: opts.frozen,
                 building: HashSet::from([canonical.clone()]),
@@ -167,6 +179,9 @@ fn run_workspace_build(
             jobs: opts.jobs,
             verbose: opts.verbose,
             no_cache: opts.no_cache,
+            features: opts.features.clone(),
+            no_default_features: opts.no_default_features,
+            all_features: opts.all_features,
             locked: opts.locked,
             frozen: opts.frozen,
             building: HashSet::from([canonical.clone()]),
@@ -289,6 +304,18 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     })
 }
 
+fn resolve_feature_defines(manifest: &Manifest, ctx: &BuildContext) -> Vec<String> {
+    use crate::core::manifest::ResolvedFeatures;
+    ResolvedFeatures::resolve(
+        manifest,
+        &ctx.features,
+        ctx.no_default_features,
+        ctx.all_features,
+    )
+    .map(|r| r.defines)
+    .unwrap_or_default()
+}
+
 fn resolve_profile_name(opts: &BuildOptions) -> String {
     if let Some(ref profile) = opts.profile {
         profile.clone()
@@ -332,7 +359,23 @@ fn resolve_and_fetch(
     let cache_path = cache_dir.join(DEP_CACHE_FILE);
 
     let existing_lock = LockFile::load(&lock_path).ok();
-    let resolved = resolve_dependencies(manifest, existing_lock.as_ref())?;
+
+    let activated_deps = {
+        use crate::core::manifest::ResolvedFeatures;
+        ResolvedFeatures::resolve(
+            manifest,
+            &ctx.features,
+            ctx.no_default_features,
+            ctx.all_features,
+        )
+        .ok()
+        .map(|r| r.activated_deps)
+    };
+    let resolved = resolve_dependencies_with_features(
+        manifest,
+        existing_lock.as_ref(),
+        activated_deps.as_ref(),
+    )?;
 
     let is_fresh = existing_lock
         .as_ref()
@@ -730,7 +773,7 @@ fn build_compile_flags(
         warnings: profile.warnings,
         coverage: profile.coverage,
         split_debug: profile.split_debug,
-        defines: Vec::new(),
+        defines: resolve_feature_defines(manifest, ctx),
         include_dirs,
     }
 }
@@ -1205,6 +1248,9 @@ mod tests {
             jobs: None,
             verbose: 0,
             no_cache: false,
+            features: Vec::new(),
+            no_default_features: false,
+            all_features: false,
             locked: false,
             frozen: false,
             building: HashSet::new(),
@@ -1229,6 +1275,9 @@ mod tests {
             jobs: None,
             verbose: 0,
             no_cache: false,
+            features: Vec::new(),
+            no_default_features: false,
+            all_features: false,
             locked: false,
             frozen: false,
             building: HashSet::new(),
@@ -1265,6 +1314,9 @@ type = "static-library"
             jobs: None,
             verbose: 0,
             no_cache: false,
+            features: Vec::new(),
+            no_default_features: false,
+            all_features: false,
             locked: false,
             frozen: false,
             building: HashSet::from([canonical]),
@@ -1303,6 +1355,9 @@ type = "static-library"
             jobs: None,
             verbose: 0,
             no_cache: false,
+            features: Vec::new(),
+            no_default_features: false,
+            all_features: false,
             locked: false,
             frozen: false,
             building: HashSet::new(),

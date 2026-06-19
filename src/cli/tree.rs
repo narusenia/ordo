@@ -24,7 +24,7 @@ pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
     let pkg = manifest.package();
     eprintln!("{} v{}", pkg.name, pkg.version);
 
-    if manifest.dependencies.is_empty() {
+    if manifest.dependencies.is_empty() && manifest.dev_dependencies.is_empty() {
         ctx.style.meta("no dependencies");
         return Ok(());
     }
@@ -33,10 +33,15 @@ pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
     let fetched = fetch_all_for_tree(&manifest, dir);
     spinner.finish_and_clear();
 
-    let deps: Vec<_> = manifest.dependencies.iter().collect();
-    let last_idx = deps.len() - 1;
+    let all_deps: Vec<(&String, &crate::core::manifest::DependencySpec, bool)> = manifest
+        .dependencies
+        .iter()
+        .map(|(n, s)| (n, s, false))
+        .chain(manifest.dev_dependencies.iter().map(|(n, s)| (n, s, true)))
+        .collect();
+    let last_idx = all_deps.len() - 1;
 
-    for (i, (name, spec)) in deps.iter().enumerate() {
+    for (i, (name, spec, is_dev)) in all_deps.iter().enumerate() {
         let is_last = i == last_idx;
         let prefix = if is_last { "└── " } else { "├── " };
         let cont = if is_last { "    " } else { "│   " };
@@ -53,7 +58,8 @@ pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
         };
 
         let optional_str = if spec.optional { " [optional]" } else { "" };
-        eprintln!("{prefix}{name} v{version_str}{source_str}{optional_str}");
+        let dev_str = if *is_dev { " [dev]" } else { "" };
+        eprintln!("{prefix}{name} v{version_str}{source_str}{optional_str}{dev_str}");
 
         if let Some(dep) = fetched.get(name.as_str()) {
             if !dep.libs.is_empty() {
@@ -121,6 +127,17 @@ fn run_workspace_tree(dir: &Path, manifest: &Manifest, ctx: &Context) -> Result<
                 ctx.style
                     .tree_detail(cont, &format!("ext: {}", ext_deps.join(", ")));
             }
+        }
+
+        if !member.manifest.dev_dependencies.is_empty() {
+            let dev_deps: Vec<&str> = member
+                .manifest
+                .dev_dependencies
+                .keys()
+                .map(|n| n.as_str())
+                .collect();
+            ctx.style
+                .tree_detail(cont, &format!("dev: {}", dev_deps.join(", ")));
         }
     }
 
@@ -238,6 +255,25 @@ type = "executable"
 [dependencies]
 fmt = { version = "11", provider = "vcpkg" }
 zlib = { provider = "system" }
+"#,
+        );
+        let ctx = crate::cli::context::Context::default_for_test();
+        run(tmp.path(), &ctx).unwrap();
+    }
+
+    #[test]
+    fn tree_with_dev_deps() {
+        let tmp = project_with_deps(
+            r#"[package]
+name = "myapp"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+fmt = { version = "11", provider = "vcpkg" }
+
+[dev-dependencies]
+gtest = { provider = "vcpkg" }
 "#,
         );
         let ctx = crate::cli::context::Context::default_for_test();

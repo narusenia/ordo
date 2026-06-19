@@ -28,7 +28,18 @@ pub fn resolve_dependencies_with_features(
     lock: Option<&LockFile>,
     activated_optional_deps: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<ResolvedPackage>> {
-    if manifest.dependencies.is_empty() {
+    resolve_dependencies_full(manifest, lock, activated_optional_deps, false)
+}
+
+pub fn resolve_dependencies_full(
+    manifest: &Manifest,
+    lock: Option<&LockFile>,
+    activated_optional_deps: Option<&std::collections::BTreeSet<String>>,
+    include_dev_deps: bool,
+) -> Result<Vec<ResolvedPackage>> {
+    if manifest.dependencies.is_empty()
+        && (!include_dev_deps || manifest.dev_dependencies.is_empty())
+    {
         return Ok(Vec::new());
     }
 
@@ -69,6 +80,17 @@ pub fn resolve_dependencies_with_features(
 
         let pinned = locked_versions.get(name.as_str()).copied();
         register_stub_package(&mut provider, name, spec, pinned)?;
+    }
+
+    if include_dev_deps {
+        for (name, spec) in &manifest.dev_dependencies {
+            let range = spec_to_range(name, spec)?;
+            root_deps.push((name.clone(), range.clone()));
+            source_map.insert(name.clone(), spec.source_kind());
+
+            let pinned = locked_versions.get(name.as_str()).copied();
+            register_stub_package(&mut provider, name, spec, pinned)?;
+        }
     }
 
     provider.add_dependencies(root_name.clone(), root_version.clone(), root_deps);
@@ -412,5 +434,66 @@ mod tests {
         let range = parse_version_req("^0.0.3").unwrap();
         assert!(range.contains(&Version::new(0, 0, 3)));
         assert!(!range.contains(&Version::new(0, 0, 4)));
+    }
+
+    #[test]
+    fn resolve_excludes_dev_deps_by_default() {
+        let m = parse_manifest(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = "11"
+
+            [dev-dependencies]
+            gtest = "1.14"
+            "#,
+        );
+        let resolved = resolve_dependencies(&m, None).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].name, "fmt");
+    }
+
+    #[test]
+    fn resolve_includes_dev_deps_when_requested() {
+        let m = parse_manifest(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            fmt = "11"
+
+            [dev-dependencies]
+            gtest = "1.14"
+            "#,
+        );
+        let resolved = resolve_dependencies_full(&m, None, None, true).unwrap();
+        assert_eq!(resolved.len(), 2);
+        assert!(resolved.iter().any(|r| r.name == "fmt"));
+        assert!(resolved.iter().any(|r| r.name == "gtest"));
+    }
+
+    #[test]
+    fn resolve_dev_deps_only() {
+        let m = parse_manifest(
+            r#"
+            [package]
+            name = "myapp"
+            version = "0.1.0"
+            type = "executable"
+
+            [dev-dependencies]
+            gtest = "1.14"
+            "#,
+        );
+        let resolved = resolve_dependencies_full(&m, None, None, true).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].name, "gtest");
     }
 }

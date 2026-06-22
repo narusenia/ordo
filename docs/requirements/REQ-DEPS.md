@@ -14,6 +14,8 @@
   - [ ] Supported providers: `vcpkg`, `conan`, `pkg-config`, `system`
   - [ ] Missing provider for a name present in multiple sources → error with guidance
   - [ ] Optional dependencies: `qt = { provider = "vcpkg", optional = true }`
+  - [ ] Alias field: `my-fmt = { provider = "vcpkg", alias = "fmt" }` — TOML key is local name, alias is real package name for provider resolution
+  - [ ] Link-name field: `openssl = { provider = "pkg-config", link-name = "ssl" }` or `link-name = ["ssl", "crypto"]` — overrides provider-returned library names for linking
 
 ## REQ-DEPS-002: Dev Dependencies
 

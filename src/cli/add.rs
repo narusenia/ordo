@@ -70,6 +70,8 @@ pub fn run(
     provider_flag: Option<&str>,
     no_verify: bool,
     with: Option<&str>,
+    alias: Option<&str>,
+    link_name: Option<&[String]>,
     ctx: &Context,
 ) -> Result<()> {
     let dir = std::env::current_dir().into_diagnostic()?;
@@ -96,6 +98,8 @@ pub fn run(
         &parsed.name,
         parsed.version.as_deref(),
         !no_verify,
+        alias,
+        link_name,
         ctx,
     )
 }
@@ -154,12 +158,15 @@ fn run_inner_git(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_inner(
     dir: &Path,
     provider: &str,
     name: &str,
     version: Option<&str>,
     resolve: bool,
+    alias: Option<&str>,
+    link_name: Option<&[String]>,
     ctx: &Context,
 ) -> Result<()> {
     let manifest_path = dir.join("Ordo.toml");
@@ -180,14 +187,15 @@ fn run_inner(
         bail!("dependency '{name}' already exists in [dependencies]");
     }
 
+    let resolve_name = alias.unwrap_or(name);
     let resolved_version = if resolve {
-        verify_resolve(provider, name, version, ctx)?
+        verify_resolve(provider, resolve_name, version, ctx)?
     } else {
         version.map(|v| v.to_string())
     };
 
     let effective_version = resolved_version.as_deref().or(version);
-    let value = build_dep_value(provider, effective_version)?;
+    let value = build_dep_value(provider, effective_version, alias, link_name)?;
     deps.insert(name, Item::Value(value));
 
     std::fs::write(&manifest_path, doc.to_string()).into_diagnostic()?;
@@ -258,21 +266,26 @@ fn verify_resolve(
     }
 }
 
-fn build_dep_value(provider: &str, version: Option<&str>) -> Result<Value> {
-    match provider {
+fn build_dep_value(
+    provider: &str,
+    version: Option<&str>,
+    alias: Option<&str>,
+    link_name: Option<&[String]>,
+) -> Result<Value> {
+    let mut table = match provider {
         "pkg-config" | "system" | "vcpkg" | "conan" => {
             let mut table = InlineTable::new();
             if let Some(v) = version {
                 table.insert("version", v.into());
             }
             table.insert("provider", provider.into());
-            Ok(Value::InlineTable(table))
+            table
         }
         "path" => {
             let path = version.unwrap_or(".");
             let mut table = InlineTable::new();
             table.insert("path", path.into());
-            Ok(Value::InlineTable(table))
+            table
         }
         "git" => {
             let url = version.ok_or_else(|| {
@@ -280,13 +293,27 @@ fn build_dep_value(provider: &str, version: Option<&str>) -> Result<Value> {
             })?;
             let mut table = InlineTable::new();
             table.insert("git", url.into());
-            Ok(Value::InlineTable(table))
+            table
         }
         _ => bail!(
             "unknown provider '{provider}'\n  \
              valid providers: pkg-config, system, vcpkg, conan, path, git"
         ),
+    };
+
+    if let Some(a) = alias {
+        table.insert("alias", a.into());
     }
+    if let Some(names) = link_name {
+        if names.len() == 1 {
+            table.insert("link-name", names[0].as_str().into());
+        } else {
+            let arr: toml_edit::Array = names.iter().map(|s| s.as_str()).collect();
+            table.insert("link-name", Value::Array(arr));
+        }
+    }
+
+    Ok(Value::InlineTable(table))
 }
 
 #[cfg(test)]
@@ -344,7 +371,7 @@ type = "executable"
     fn add_pkg_config_dep() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx).unwrap();
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
@@ -356,7 +383,7 @@ type = "executable"
     fn add_system_dep_with_version() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "system", "m", None, false, &ctx).unwrap();
+        run_inner(tmp.path(), "system", "m", None, false, None, None, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("provider = \"system\""));
@@ -366,7 +393,7 @@ type = "executable"
     fn add_vcpkg_dep_with_version() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false, &ctx).unwrap();
+        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false, None, None, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("version = \"11\""));
@@ -377,8 +404,8 @@ type = "executable"
     fn add_duplicate_fails() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx).unwrap();
-        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false, &ctx);
+        run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx).unwrap();
+        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx);
         assert!(result.is_err());
     }
 
@@ -386,7 +413,7 @@ type = "executable"
     fn add_unknown_provider_fails() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        let result = run_inner(tmp.path(), "npm", "lodash", None, false, &ctx);
+        let result = run_inner(tmp.path(), "npm", "lodash", None, false, None, None, &ctx);
         assert!(result.is_err());
     }
 
@@ -404,7 +431,7 @@ type = "executable"
         )
         .unwrap();
 
-        run_inner(tmp.path(), "system", "pthread", None, false, &ctx).unwrap();
+        run_inner(tmp.path(), "system", "pthread", None, false, None, None, &ctx).unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
@@ -470,5 +497,68 @@ type = "executable"
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("git = \"https://github.com/fmtlib/fmt\""));
         assert!(!content.contains("tag"));
+    }
+
+    #[test]
+    fn add_with_alias() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        run_inner(
+            tmp.path(),
+            "pkg-config",
+            "my-ssl",
+            None,
+            false,
+            Some("openssl"),
+            None,
+            &ctx,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("my-ssl"));
+        assert!(content.contains("alias = \"openssl\""));
+    }
+
+    #[test]
+    fn add_with_link_name_single() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        let link_names = vec!["ssl".to_string()];
+        run_inner(
+            tmp.path(),
+            "pkg-config",
+            "openssl",
+            None,
+            false,
+            None,
+            Some(&link_names),
+            &ctx,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("link-name = \"ssl\""));
+    }
+
+    #[test]
+    fn add_with_link_name_multiple() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        let link_names = vec!["ssl".to_string(), "crypto".to_string()];
+        run_inner(
+            tmp.path(),
+            "pkg-config",
+            "openssl",
+            None,
+            false,
+            None,
+            Some(&link_names),
+            &ctx,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("link-name = [\"ssl\", \"crypto\"]"));
     }
 }

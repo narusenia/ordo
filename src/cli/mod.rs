@@ -208,6 +208,14 @@ pub enum Command {
         /// Lua build script path (git dependencies only)
         #[arg(long)]
         with: Option<String>,
+
+        /// Real package name when using a different local name
+        #[arg(long)]
+        alias: Option<String>,
+
+        /// Override library name(s) for linking (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        link_name: Option<Vec<String>>,
     },
 
     /// Update dependencies

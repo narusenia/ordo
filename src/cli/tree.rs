@@ -59,7 +59,17 @@ pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
 
         let optional_str = if spec.optional { " [optional]" } else { "" };
         let dev_str = if *is_dev { " [dev]" } else { "" };
-        eprintln!("{prefix}{name} v{version_str}{source_str}{optional_str}{dev_str}");
+        let alias_str = spec
+            .alias
+            .as_ref()
+            .map(|a| format!(" [alias: {a}]"))
+            .unwrap_or_default();
+        let link_name_str = spec
+            .link_name
+            .as_ref()
+            .map(|l| format!(" [link: {}]", l.join(", ")))
+            .unwrap_or_default();
+        eprintln!("{prefix}{name} v{version_str}{source_str}{optional_str}{dev_str}{alias_str}{link_name_str}");
 
         if let Some(dep) = fetched.get(name.as_str()) {
             if !dep.libs.is_empty() {
@@ -155,7 +165,7 @@ fn fetch_all_for_tree(
         .iter()
         .filter(|(_, spec)| spec.source_kind() == DependencySource::Provider(ProviderKind::Vcpkg))
         .map(|(name, spec)| VcpkgPackageSpec {
-            name: name.as_str(),
+            name: spec.package_name(name),
             version: spec.version.as_deref(),
         })
         .collect();
@@ -166,28 +176,29 @@ fn fetch_all_for_tree(
     }
 
     for (name, spec) in &manifest.dependencies {
+        let pkg_name = spec.package_name(name);
         let fetched = match spec.source_kind() {
             DependencySource::Provider(ProviderKind::Vcpkg) => {
                 let p = VcpkgProvider::new();
-                p.resolve(name, spec.version.as_deref())
+                p.resolve(pkg_name, spec.version.as_deref())
                     .and_then(|r| p.fetch(&r))
                     .ok()
             }
             DependencySource::Provider(ProviderKind::Conan) => {
                 let p = ConanProvider::new();
-                p.resolve(name, spec.version.as_deref())
+                p.resolve(pkg_name, spec.version.as_deref())
                     .and_then(|r| p.fetch(&r))
                     .ok()
             }
             DependencySource::Provider(ProviderKind::PkgConfig) => {
                 let p = PkgConfigProvider;
-                p.resolve(name, spec.version.as_deref())
+                p.resolve(pkg_name, spec.version.as_deref())
                     .and_then(|r| p.fetch(&r))
                     .ok()
             }
             DependencySource::Provider(ProviderKind::System) => {
                 let p = SystemProvider;
-                p.resolve(name, spec.version.as_deref())
+                p.resolve(pkg_name, spec.version.as_deref())
                     .and_then(|r| p.fetch(&r))
                     .ok()
             }
@@ -212,7 +223,10 @@ fn fetch_all_for_tree(
             _ => None,
         };
 
-        if let Some(dep) = fetched {
+        if let Some(mut dep) = fetched {
+            if let Some(ref link_names) = spec.link_name {
+                dep.libs = link_names.clone();
+            }
             result.insert(name.clone(), dep);
         }
     }

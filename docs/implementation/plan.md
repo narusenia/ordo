@@ -70,7 +70,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | TASK-016 | Workspace Build Integration | Done | L |
 | TASK-017 | Full Build Profile Support | Done | M |
 | TASK-018 | Feature Flags | Done | M |
-| TASK-019 | Dev Dependencies | Todo | S |
+| TASK-019 | Dev Dependencies | Done | S |
 
 ### M4: Testing & Quality
 

@@ -25,6 +25,17 @@ pub struct Manifest {
     pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
     #[serde(default)]
     pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
+    #[serde(default)]
+    pub target: std::collections::BTreeMap<String, TargetSection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct TargetSection {
+    #[serde(default)]
+    pub dependencies: std::collections::BTreeMap<String, DependencySpec>,
+    #[serde(default)]
+    pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -747,6 +758,75 @@ impl<'de> Deserialize<'de> for DependencySpec {
     }
 }
 
+fn eval_cfg(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    let inner = trimmed
+        .strip_prefix("cfg(")
+        .and_then(|s| s.strip_suffix(')'));
+
+    let Some(condition) = inner else {
+        return false;
+    };
+
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    eval_cfg_inner(condition.trim(), os, arch)
+}
+
+fn eval_cfg_inner(condition: &str, os: &str, arch: &str) -> bool {
+    if let Some(inner) = condition
+        .strip_prefix("not(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return !eval_cfg_inner(inner.trim(), os, arch);
+    }
+
+    if let Some(inner) = condition
+        .strip_prefix("all(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return split_cfg_args(inner).all(|arg| eval_cfg_inner(arg.trim(), os, arch));
+    }
+
+    if let Some(inner) = condition
+        .strip_prefix("any(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return split_cfg_args(inner).any(|arg| eval_cfg_inner(arg.trim(), os, arch));
+    }
+
+    match condition {
+        "macos" => os == "macos",
+        "linux" => os == "linux",
+        "windows" => os == "windows",
+        "unix" => os == "macos" || os == "linux",
+        "x86_64" => arch == "x86_64",
+        "aarch64" => arch == "aarch64",
+        _ => false,
+    }
+}
+
+fn split_cfg_args(s: &str) -> impl Iterator<Item = &str> {
+    let mut depth = 0i32;
+    let mut last = 0;
+    let bytes = s.as_bytes();
+    let mut parts = Vec::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                parts.push(s[last..i].trim());
+                last = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(s[last..].trim());
+    parts.into_iter()
+}
+
 impl DependencySpec {
     pub fn package_name<'a>(&'a self, key: &'a str) -> &'a str {
         self.alias.as_deref().unwrap_or(key)
@@ -828,10 +908,25 @@ impl Manifest {
     }
 
     pub fn parse(content: &str, path: &Path) -> Result<Self, ManifestError> {
-        let manifest: Manifest =
+        let mut manifest: Manifest =
             toml::from_str(content).map_err(|e| Self::toml_error(e, content, path))?;
+        manifest.apply_target_deps();
         manifest.validate()?;
         Ok(manifest)
+    }
+
+    fn apply_target_deps(&mut self) {
+        let targets = std::mem::take(&mut self.target);
+        for (cfg_expr, section) in targets {
+            if eval_cfg(&cfg_expr) {
+                for (name, spec) in section.dependencies {
+                    self.dependencies.entry(name).or_insert(spec);
+                }
+                for (name, spec) in section.dev_dependencies {
+                    self.dev_dependencies.entry(name).or_insert(spec);
+                }
+            }
+        }
     }
 
     fn toml_error(e: toml::de::Error, content: &str, path: &Path) -> ManifestError {
@@ -2342,5 +2437,128 @@ fmt = "11"
         let spec = &m.dependencies["fmt"];
         assert!(spec.alias.is_none());
         assert!(spec.link_name.is_none());
+    }
+
+    #[test]
+    fn eval_cfg_os() {
+        let os = std::env::consts::OS;
+        assert!(eval_cfg(&format!("cfg({os})")));
+        assert!(!eval_cfg("cfg(nonexistent_os)"));
+    }
+
+    #[test]
+    fn eval_cfg_not() {
+        assert!(eval_cfg("cfg(not(nonexistent_os))"));
+        assert!(!eval_cfg("cfg(not(unix))"));
+    }
+
+    #[test]
+    fn eval_cfg_any() {
+        assert!(eval_cfg("cfg(any(macos, linux, windows))"));
+        assert!(!eval_cfg("cfg(any(nonexistent1, nonexistent2))"));
+    }
+
+    #[test]
+    fn eval_cfg_all() {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        assert!(eval_cfg(&format!("cfg(all({os}, {arch}))")));
+        assert!(!eval_cfg(&format!("cfg(all({os}, nonexistent))")));
+    }
+
+    #[test]
+    fn eval_cfg_unix() {
+        if cfg!(unix) {
+            assert!(eval_cfg("cfg(unix)"));
+        } else {
+            assert!(!eval_cfg("cfg(unix)"));
+        }
+    }
+
+    #[test]
+    fn target_deps_matching_platform() {
+        let os = std::env::consts::OS;
+        let toml = format!(
+            r#"
+            [package]
+            name = "test"
+            version = "0.1.0"
+            type = "executable"
+
+            [target.'cfg({os})'.dependencies]
+            platform-dep = {{ provider = "system" }}
+
+            [target.'cfg(nonexistent_os)'.dependencies]
+            skip-dep = {{ provider = "system" }}
+            "#
+        );
+        let m = parse(&toml).unwrap();
+        assert!(m.dependencies.contains_key("platform-dep"));
+        assert!(!m.dependencies.contains_key("skip-dep"));
+    }
+
+    #[test]
+    fn target_deps_merged_with_regular() {
+        let os = std::env::consts::OS;
+        let toml = format!(
+            r#"
+            [package]
+            name = "test"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            common = {{ provider = "system" }}
+
+            [target.'cfg({os})'.dependencies]
+            platform-dep = {{ provider = "system" }}
+            "#
+        );
+        let m = parse(&toml).unwrap();
+        assert!(m.dependencies.contains_key("common"));
+        assert!(m.dependencies.contains_key("platform-dep"));
+    }
+
+    #[test]
+    fn target_deps_no_override_existing() {
+        let os = std::env::consts::OS;
+        let toml = format!(
+            r#"
+            [package]
+            name = "test"
+            version = "0.1.0"
+            type = "executable"
+
+            [dependencies]
+            openssl = {{ version = "3", provider = "vcpkg" }}
+
+            [target.'cfg({os})'.dependencies]
+            openssl = {{ provider = "brew" }}
+            "#
+        );
+        let m = parse(&toml).unwrap();
+        // Regular deps take precedence
+        assert_eq!(
+            m.dependencies["openssl"].provider,
+            Some(ProviderKind::Vcpkg)
+        );
+    }
+
+    #[test]
+    fn target_dev_deps() {
+        let os = std::env::consts::OS;
+        let toml = format!(
+            r#"
+            [package]
+            name = "test"
+            version = "0.1.0"
+            type = "executable"
+
+            [target.'cfg({os})'.dev-dependencies]
+            test-lib = {{ provider = "system" }}
+            "#
+        );
+        let m = parse(&toml).unwrap();
+        assert!(m.dev_dependencies.contains_key("test-lib"));
     }
 }

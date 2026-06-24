@@ -637,6 +637,8 @@ pub enum ProviderKind {
     Brew,
     Nix,
     Pacman,
+    Clib,
+    Nuget,
 }
 
 impl fmt::Display for ProviderKind {
@@ -649,6 +651,8 @@ impl fmt::Display for ProviderKind {
             Self::Brew => write!(f, "brew"),
             Self::Nix => write!(f, "nix"),
             Self::Pacman => write!(f, "pacman"),
+            Self::Clib => write!(f, "clib"),
+            Self::Nuget => write!(f, "nuget"),
         }
     }
 }

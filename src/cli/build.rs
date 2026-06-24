@@ -2,9 +2,11 @@ use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
 use crate::backend::provider::brew::BrewProvider;
+use crate::backend::provider::clib::ClibProvider;
 use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::{GitDepSpec, GitProvider};
 use crate::backend::provider::nix::NixProvider;
+use crate::backend::provider::nuget::NugetProvider;
 use crate::backend::provider::pacman::PacmanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
@@ -686,6 +688,74 @@ fn fetch_dependencies(
                             &spinner,
                             "Failed",
                             &format!("{name} (pacman)"),
+                        );
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Clib) => {
+                let spinner = ui.style.create_spinner(&format!("Fetching {name} (clib)…"));
+                let provider = ClibProvider;
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
+                    Ok(resolved) => match provider.fetch(&resolved) {
+                        Ok(dep) => {
+                            ui.style.finish_spinner_success(
+                                &spinner,
+                                "Fetched",
+                                &format!("{name} v{} (clib)", resolved.version),
+                            );
+                            resolved_versions.insert(name.clone(), resolved.version.clone());
+                            dep
+                        }
+                        Err(e) => {
+                            ui.style.finish_spinner_error(
+                                &spinner,
+                                "Failed",
+                                &format!("{name} (clib)"),
+                            );
+                            return Err(e);
+                        }
+                    },
+                    Err(e) => {
+                        ui.style.finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (clib)"),
+                        );
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Nuget) => {
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Fetching {name} (nuget)…"));
+                let provider = NugetProvider;
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
+                    Ok(resolved) => match provider.fetch(&resolved) {
+                        Ok(dep) => {
+                            ui.style.finish_spinner_success(
+                                &spinner,
+                                "Fetched",
+                                &format!("{name} v{} (nuget)", resolved.version),
+                            );
+                            resolved_versions.insert(name.clone(), resolved.version.clone());
+                            dep
+                        }
+                        Err(e) => {
+                            ui.style.finish_spinner_error(
+                                &spinner,
+                                "Failed",
+                                &format!("{name} (nuget)"),
+                            );
+                            return Err(e);
+                        }
+                    },
+                    Err(e) => {
+                        ui.style.finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (nuget)"),
                         );
                         return Err(e);
                     }

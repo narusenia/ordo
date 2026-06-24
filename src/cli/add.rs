@@ -1,8 +1,10 @@
 use super::context::Context;
 use crate::backend::provider::brew::BrewProvider;
+use crate::backend::provider::clib::ClibProvider;
 use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::expand_git_shorthand;
 use crate::backend::provider::nix::NixProvider;
+use crate::backend::provider::nuget::NugetProvider;
 use crate::backend::provider::pacman::PacmanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
@@ -23,6 +25,8 @@ const PROVIDERS: &[&str] = &[
     "brew",
     "nix",
     "pacman",
+    "clib",
+    "nuget",
     "path",
     "git",
 ];
@@ -314,6 +318,8 @@ fn verify_resolve(
         "brew" => BrewProvider.resolve(name, version),
         "nix" => NixProvider.resolve(name, version),
         "pacman" => PacmanProvider.resolve(name, version),
+        "clib" => ClibProvider.resolve(name, version),
+        "nuget" => NugetProvider.resolve(name, version),
         _ => {
             sw.finish_success("", "");
             return Ok(None);
@@ -344,7 +350,8 @@ fn build_dep_value(
     link_name: Option<&[String]>,
 ) -> Result<Value> {
     let mut table = match provider {
-        "pkg-config" | "system" | "vcpkg" | "conan" | "brew" | "nix" | "pacman" => {
+        "pkg-config" | "system" | "vcpkg" | "conan" | "brew" | "nix" | "pacman" | "clib"
+        | "nuget" => {
             let mut table = InlineTable::new();
             if let Some(v) = version {
                 table.insert("version", v.into());

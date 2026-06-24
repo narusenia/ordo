@@ -504,7 +504,7 @@ fn fetch_dependencies(
         .iter()
         .filter(|(_, spec)| spec.source_kind() == DependencySource::Provider(ProviderKind::Vcpkg))
         .map(|(name, spec)| VcpkgPackageSpec {
-            name: name.as_str(),
+            name: spec.package_name(name),
             version: spec.version.as_deref(),
         })
         .collect();
@@ -532,13 +532,14 @@ fn fetch_dependencies(
 
     // Pass 2: resolve + fetch each dependency
     for (name, spec) in &manifest.dependencies {
-        let dep = match spec.source_kind() {
+        let pkg_name = spec.package_name(name);
+        let mut dep = match spec.source_kind() {
             DependencySource::Provider(ProviderKind::PkgConfig) => {
                 let spinner = ui
                     .style
                     .create_spinner(&format!("Resolving {name} (pkg-config)…"));
                 let provider = PkgConfigProvider;
-                match provider.resolve(name, spec.version.as_deref()) {
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
                     Ok(resolved) => {
                         ui.style.finish_spinner_success(
                             &spinner,
@@ -563,7 +564,7 @@ fn fetch_dependencies(
                     .style
                     .create_spinner(&format!("Resolving {name} (system)…"));
                 let provider = SystemProvider;
-                match provider.resolve(name, spec.version.as_deref()) {
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
                     Ok(resolved) => {
                         ui.style.finish_spinner_success(
                             &spinner,
@@ -590,9 +591,9 @@ fn fetch_dependencies(
                 let provider = VcpkgProvider::new();
                 let root = provider.vcpkg_root()?;
                 let triplet = VcpkgProvider::host_triplet();
-                let version = provider.query_version(&root, name, triplet);
+                let version = provider.query_version(&root, pkg_name, triplet);
                 let resolved = ResolvedDep {
-                    name: name.to_string(),
+                    name: pkg_name.to_string(),
                     version: version.clone(),
                     source: "vcpkg".to_string(),
                     checksum: None,
@@ -625,7 +626,11 @@ fn fetch_dependencies(
                 let on_progress = |msg: &str| {
                     sw.set_detail(msg);
                 };
-                match provider.resolve_with_progress(name, spec.version.as_deref(), &on_progress) {
+                match provider.resolve_with_progress(
+                    pkg_name,
+                    spec.version.as_deref(),
+                    &on_progress,
+                ) {
                     Ok(resolved) => {
                         sw.finish_success(
                             "Resolved",
@@ -716,6 +721,9 @@ fn fetch_dependencies(
             }
             _ => continue,
         };
+        if let Some(ref link_names) = spec.link_name {
+            dep.libs = link_names.clone();
+        }
         fetched.push(dep);
     }
 

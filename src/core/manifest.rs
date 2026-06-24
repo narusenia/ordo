@@ -623,6 +623,8 @@ pub struct DependencySpec {
     pub workspace: bool,
     pub features: Vec<String>,
     pub with: Option<String>,
+    pub alias: Option<String>,
+    pub link_name: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -645,6 +647,27 @@ impl fmt::Display for ProviderKind {
     }
 }
 
+fn deserialize_string_or_vec_opt<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+
+    Option::<StringOrVec>::deserialize(deserializer).map(|opt| {
+        opt.map(|v| match v {
+            StringOrVec::Single(s) => vec![s],
+            StringOrVec::Multiple(v) => v,
+        })
+    })
+}
+
 impl<'de> Deserialize<'de> for DependencySpec {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -654,7 +677,7 @@ impl<'de> Deserialize<'de> for DependencySpec {
         #[serde(untagged)]
         enum Raw {
             Version(String),
-            Table(DependencyTable),
+            Table(Box<DependencyTable>),
         }
 
         #[derive(Deserialize)]
@@ -674,6 +697,9 @@ impl<'de> Deserialize<'de> for DependencySpec {
             #[serde(default)]
             features: Vec<String>,
             with: Option<String>,
+            alias: Option<String>,
+            #[serde(default, deserialize_with = "deserialize_string_or_vec_opt")]
+            link_name: Option<Vec<String>>,
         }
 
         match Raw::deserialize(deserializer)? {
@@ -689,6 +715,8 @@ impl<'de> Deserialize<'de> for DependencySpec {
                 workspace: false,
                 features: Vec::new(),
                 with: None,
+                alias: None,
+                link_name: None,
             }),
             Raw::Table(t) => Ok(DependencySpec {
                 version: t.version,
@@ -702,12 +730,18 @@ impl<'de> Deserialize<'de> for DependencySpec {
                 workspace: t.workspace,
                 features: t.features,
                 with: t.with,
+                alias: t.alias,
+                link_name: t.link_name,
             }),
         }
     }
 }
 
 impl DependencySpec {
+    pub fn package_name<'a>(&'a self, key: &'a str) -> &'a str {
+        self.alias.as_deref().unwrap_or(key)
+    }
+
     pub fn source_kind(&self) -> DependencySource {
         if self.workspace {
             DependencySource::Workspace
@@ -836,6 +870,16 @@ impl Manifest {
                         "dependency '{name}': `with` is only valid on git dependencies"
                     ),
                     help: Some("add a `git = \"...\"` field or remove `with`".to_string()),
+                });
+            }
+            if let Some(ref link_names) = spec.link_name
+                && link_names.iter().any(|s| s.is_empty())
+            {
+                return Err(ManifestError::ValidationError {
+                    message: format!(
+                        "dependency '{name}': `link-name` must not contain empty strings"
+                    ),
+                    help: Some("remove empty entries from `link-name`".to_string()),
                 });
             }
         }
@@ -2139,5 +2183,154 @@ mod tests {
         let resolved = ResolvedFeatures::resolve(&m, &[], false, false).unwrap();
         assert!(resolved.enabled.is_empty());
         assert!(resolved.defines.is_empty());
+    }
+
+    #[test]
+    fn dep_alias_field() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+my-fmt = { provider = "vcpkg", alias = "fmt" }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["my-fmt"];
+        assert_eq!(spec.alias.as_deref(), Some("fmt"));
+        assert_eq!(spec.package_name("my-fmt"), "fmt");
+    }
+
+    #[test]
+    fn dep_alias_defaults_to_key() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+fmt = { provider = "vcpkg" }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["fmt"];
+        assert!(spec.alias.is_none());
+        assert_eq!(spec.package_name("fmt"), "fmt");
+    }
+
+    #[test]
+    fn dep_link_name_single_string() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+openssl = { provider = "pkg-config", link-name = "ssl" }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["openssl"];
+        assert_eq!(spec.link_name.as_deref(), Some(&["ssl".to_string()][..]));
+    }
+
+    #[test]
+    fn dep_link_name_array() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+openssl = { provider = "pkg-config", link-name = ["ssl", "crypto"] }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["openssl"];
+        assert_eq!(
+            spec.link_name,
+            Some(vec!["ssl".to_string(), "crypto".to_string()])
+        );
+    }
+
+    #[test]
+    fn dep_link_name_empty_string_rejected() {
+        let result = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+openssl = { provider = "pkg-config", link-name = "" }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dep_alias_and_link_name_combined() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+my-ssl = { provider = "pkg-config", alias = "openssl", link-name = ["ssl", "crypto"] }
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["my-ssl"];
+        assert_eq!(spec.alias.as_deref(), Some("openssl"));
+        assert_eq!(spec.package_name("my-ssl"), "openssl");
+        assert_eq!(
+            spec.link_name,
+            Some(vec!["ssl".to_string(), "crypto".to_string()])
+        );
+    }
+
+    #[test]
+    fn dep_short_form_has_no_alias_or_link_name() {
+        let m = Manifest::parse(
+            r#"
+[package]
+name = "test"
+version = "0.1.0"
+type = "executable"
+
+[dependencies]
+fmt = "11"
+"#,
+            &PathBuf::from("Ordo.toml"),
+        )
+        .unwrap();
+
+        let spec = &m.dependencies["fmt"];
+        assert!(spec.alias.is_none());
+        assert!(spec.link_name.is_none());
     }
 }

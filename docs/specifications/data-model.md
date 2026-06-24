@@ -73,6 +73,13 @@ fmt = { workspace = true }
 
 # With features
 spdlog = { version = "1.14", provider = "vcpkg", features = ["async"] }
+
+# Alias (local name differs from real package name)
+my-fmt = { provider = "vcpkg", alias = "fmt" }
+
+# Link-name override (single or array)
+openssl = { provider = "pkg-config", link-name = "ssl" }
+boost = { provider = "vcpkg", link-name = ["boost_regex", "boost_system"] }
 ```
 
 ### [features]

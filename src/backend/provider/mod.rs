@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 
+pub mod brew;
 pub mod conan;
 pub mod git;
+pub mod nix;
+pub mod pacman;
 pub mod pkgconfig;
 pub mod system;
 pub mod vcpkg;

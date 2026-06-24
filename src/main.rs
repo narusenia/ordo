@@ -97,7 +97,7 @@ fn main() -> Result<()> {
             eprintln!("ordo watch: not yet implemented");
         }
         Command::Add {
-            spec,
+            specs,
             provider,
             no_verify,
             with,
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
             link_name,
         } => {
             cli::add::run(
-                &spec,
+                &specs,
                 provider.as_deref(),
                 no_verify,
                 with.as_deref(),

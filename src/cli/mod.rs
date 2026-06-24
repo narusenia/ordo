@@ -192,12 +192,13 @@ pub enum Command {
         notify: bool,
     },
 
-    /// Add a dependency (e.g. `ordo add raylib@6 -p vcpkg`, `ordo add vcpkg:raylib@6`)
+    /// Add a dependency (e.g. `ordo add raylib@6 -P vcpkg`, `ordo add vcpkg:raylib@6`, `ordo add fmt glfw raylib`)
     Add {
-        /// Package spec: name, name@version, or provider:name@version
-        spec: String,
+        /// Package specs: name, name@version, or provider:name@version (multiple allowed)
+        #[arg(required = true)]
+        specs: Vec<String>,
 
-        /// Provider (pkg-config, system, vcpkg, conan, path, git). Interactive if omitted.
+        /// Provider (pkg-config, system, vcpkg, conan, path, git). Applies to all specs.
         #[arg(short = 'P', long)]
         provider: Option<String>,
 
@@ -209,11 +210,11 @@ pub enum Command {
         #[arg(long)]
         with: Option<String>,
 
-        /// Real package name when using a different local name
+        /// Real package name when using a different local name (single spec only)
         #[arg(long)]
         alias: Option<String>,
 
-        /// Override library name(s) for linking (comma-separated)
+        /// Override library name(s) for linking, comma-separated (single spec only)
         #[arg(long, value_delimiter = ',')]
         link_name: Option<Vec<String>>,
     },

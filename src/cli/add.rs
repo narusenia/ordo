@@ -66,7 +66,7 @@ fn prompt_provider() -> Result<String> {
 }
 
 pub fn run(
-    spec: &str,
+    specs: &[String],
     provider_flag: Option<&str>,
     no_verify: bool,
     with: Option<&str>,
@@ -74,34 +74,89 @@ pub fn run(
     link_name: Option<&[String]>,
     ctx: &Context,
 ) -> Result<()> {
+    if specs.len() > 1 {
+        if alias.is_some() {
+            bail!("`--alias` can only be used with a single package spec");
+        }
+        if link_name.is_some() {
+            bail!("`--link-name` can only be used with a single package spec");
+        }
+        if with.is_some() {
+            bail!("`--with` can only be used with a single package spec");
+        }
+    }
+
     let dir = std::env::current_dir().into_diagnostic()?;
-    let parsed = parse_spec(spec);
+    let mut succeeded = 0u32;
+    let mut failed: Vec<(String, String)> = Vec::new();
 
-    let provider = provider_flag
-        .map(|s| s.to_string())
-        .or(parsed.provider)
-        .map_or_else(prompt_provider, Ok)?;
+    for spec in specs {
+        let parsed = parse_spec(spec);
 
-    if provider == "git" {
-        let url = expand_git_shorthand(&parsed.name);
-        let dep_name = git_repo_name(&parsed.name);
-        return run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref(), with, ctx);
+        let provider = match provider_flag
+            .map(|s| s.to_string())
+            .or(parsed.provider.clone())
+        {
+            Some(p) => p,
+            None => {
+                if specs.len() > 1 {
+                    failed.push((
+                        parsed.name.clone(),
+                        "no provider specified (use -P or provider:name syntax)".to_string(),
+                    ));
+                    continue;
+                }
+                prompt_provider()?
+            }
+        };
+
+        let result = if provider == "git" {
+            let url = expand_git_shorthand(&parsed.name);
+            let dep_name = git_repo_name(&parsed.name);
+            run_inner_git(&dir, &dep_name, &url, parsed.version.as_deref(), with, ctx)
+        } else {
+            if with.is_some() {
+                failed.push((
+                    parsed.name.clone(),
+                    "`--with` is only valid for git dependencies".to_string(),
+                ));
+                continue;
+            }
+            run_inner(
+                &dir,
+                &provider,
+                &parsed.name,
+                parsed.version.as_deref(),
+                !no_verify,
+                alias,
+                link_name,
+                ctx,
+            )
+        };
+
+        match result {
+            Ok(()) => succeeded += 1,
+            Err(e) => failed.push((parsed.name.clone(), format!("{e}"))),
+        }
     }
 
-    if with.is_some() {
-        bail!("`--with` is only valid for git dependencies");
+    if specs.len() > 1 {
+        let total = specs.len() as u32;
+        if failed.is_empty() {
+            ctx.style
+                .success("Added", &format!("{succeeded}/{total} packages"));
+        } else {
+            for (name, reason) in &failed {
+                ctx.style.error("Failed", &format!("{name}: {reason}"));
+            }
+            bail!("Added {succeeded}/{total} packages");
+        }
+    } else if !failed.is_empty() {
+        let (_, reason) = &failed[0];
+        bail!("{reason}");
     }
 
-    run_inner(
-        &dir,
-        &provider,
-        &parsed.name,
-        parsed.version.as_deref(),
-        !no_verify,
-        alias,
-        link_name,
-        ctx,
-    )
+    Ok(())
 }
 
 fn git_repo_name(spec: &str) -> String {
@@ -609,5 +664,95 @@ type = "executable"
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("link-name = [\"ssl\", \"crypto\"]"));
+    }
+
+    fn run_multi(tmp: &TempDir, specs: &[&str], provider: Option<&str>) -> Result<()> {
+        let ctx = crate::cli::context::Context::default_for_test();
+        let specs: Vec<String> = specs.iter().map(|s| s.to_string()).collect();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        run(&specs, provider, true, None, None, None, &ctx)
+    }
+
+    #[test]
+    fn add_multiple_packages() {
+        let tmp = setup_project();
+        run_multi(&tmp, &["zlib", "m", "pthread"], Some("system")).unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("zlib"));
+        assert!(content.contains("\nm = ") || content.contains("\nm="));
+        assert!(content.contains("pthread"));
+    }
+
+    #[test]
+    fn add_multiple_with_inline_provider() {
+        let tmp = setup_project();
+        run_multi(&tmp, &["system:zlib", "system:m"], None).unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("zlib"));
+        assert!(content.contains("\nm = ") || content.contains("\nm="));
+    }
+
+    #[test]
+    fn add_multiple_rejects_alias() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        let specs = vec!["zlib".to_string(), "m".to_string()];
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let result = run(
+            &specs,
+            Some("system"),
+            true,
+            None,
+            Some("my-alias"),
+            None,
+            &ctx,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn add_multiple_rejects_link_name() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        let specs = vec!["zlib".to_string(), "m".to_string()];
+        let link_names = vec!["z".to_string()];
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let result = run(
+            &specs,
+            Some("system"),
+            true,
+            None,
+            None,
+            Some(&link_names),
+            &ctx,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn add_multiple_partial_failure() {
+        let tmp = setup_project();
+        let ctx = crate::cli::context::Context::default_for_test();
+        // First add zlib so the second call hits a duplicate
+        run_inner(tmp.path(), "system", "zlib", None, false, None, None, &ctx).unwrap();
+
+        let specs = vec!["zlib".to_string(), "m".to_string()];
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let result = run(&specs, Some("system"), true, None, None, None, &ctx);
+        // Should fail because zlib is a duplicate
+        assert!(result.is_err());
+
+        // But m should have been added successfully
+        let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
+        assert!(content.contains("\nm = ") || content.contains("\nm="));
+    }
+
+    #[test]
+    fn add_multiple_no_provider_fails_gracefully() {
+        let tmp = setup_project();
+        // Without -P and without inline provider, multi-add should fail per-package
+        run_multi(&tmp, &["zlib", "m"], None).unwrap_err();
     }
 }

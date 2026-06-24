@@ -1,8 +1,11 @@
 use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::NinjaGenerator;
+use crate::backend::provider::brew::BrewProvider;
 use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::{GitDepSpec, GitProvider};
+use crate::backend::provider::nix::NixProvider;
+use crate::backend::provider::pacman::PacmanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
@@ -613,6 +616,76 @@ fn fetch_dependencies(
                             &spinner,
                             "Failed",
                             &format!("{name} (vcpkg)"),
+                        );
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Brew) => {
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Resolving {name} (brew)…"));
+                let provider = BrewProvider;
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        ui.style.finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (brew)", resolved.version),
+                        );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        ui.style.finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (brew)"),
+                        );
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Nix) => {
+                let spinner = ui.style.create_spinner(&format!("Resolving {name} (nix)…"));
+                let provider = NixProvider;
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        ui.style.finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (nix)", resolved.version),
+                        );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        ui.style
+                            .finish_spinner_error(&spinner, "Failed", &format!("{name} (nix)"));
+                        return Err(e);
+                    }
+                }
+            }
+            DependencySource::Provider(ProviderKind::Pacman) => {
+                let spinner = ui
+                    .style
+                    .create_spinner(&format!("Resolving {name} (pacman)…"));
+                let provider = PacmanProvider;
+                match provider.resolve(pkg_name, spec.version.as_deref()) {
+                    Ok(resolved) => {
+                        ui.style.finish_spinner_success(
+                            &spinner,
+                            "Resolved",
+                            &format!("{name} v{} (pacman)", resolved.version),
+                        );
+                        resolved_versions.insert(name.clone(), resolved.version.clone());
+                        provider.fetch(&resolved)?
+                    }
+                    Err(e) => {
+                        ui.style.finish_spinner_error(
+                            &spinner,
+                            "Failed",
+                            &format!("{name} (pacman)"),
                         );
                         return Err(e);
                     }

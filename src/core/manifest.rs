@@ -634,6 +634,9 @@ pub enum ProviderKind {
     Conan,
     PkgConfig,
     System,
+    Brew,
+    Nix,
+    Pacman,
 }
 
 impl fmt::Display for ProviderKind {
@@ -643,6 +646,9 @@ impl fmt::Display for ProviderKind {
             Self::Conan => write!(f, "conan"),
             Self::PkgConfig => write!(f, "pkg-config"),
             Self::System => write!(f, "system"),
+            Self::Brew => write!(f, "brew"),
+            Self::Nix => write!(f, "nix"),
+            Self::Pacman => write!(f, "pacman"),
         }
     }
 }

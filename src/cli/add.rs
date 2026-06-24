@@ -1,6 +1,9 @@
 use super::context::Context;
+use crate::backend::provider::brew::BrewProvider;
 use crate::backend::provider::conan::ConanProvider;
 use crate::backend::provider::git::expand_git_shorthand;
+use crate::backend::provider::nix::NixProvider;
+use crate::backend::provider::pacman::PacmanProvider;
 use crate::backend::provider::pkgconfig::PkgConfigProvider;
 use crate::backend::provider::system::SystemProvider;
 use crate::backend::provider::vcpkg::VcpkgProvider;
@@ -12,7 +15,17 @@ use promptuity::{Promptuity, Term};
 use std::path::Path;
 use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
-const PROVIDERS: &[&str] = &["vcpkg", "pkg-config", "system", "conan", "path", "git"];
+const PROVIDERS: &[&str] = &[
+    "vcpkg",
+    "pkg-config",
+    "system",
+    "conan",
+    "brew",
+    "nix",
+    "pacman",
+    "path",
+    "git",
+];
 
 struct ParsedSpec {
     provider: Option<String>,
@@ -298,6 +311,9 @@ fn verify_resolve(
         }
         "pkg-config" => PkgConfigProvider.resolve(name, version),
         "system" => SystemProvider.resolve(name, version),
+        "brew" => BrewProvider.resolve(name, version),
+        "nix" => NixProvider.resolve(name, version),
+        "pacman" => PacmanProvider.resolve(name, version),
         _ => {
             sw.finish_success("", "");
             return Ok(None);
@@ -328,7 +344,7 @@ fn build_dep_value(
     link_name: Option<&[String]>,
 ) -> Result<Value> {
     let mut table = match provider {
-        "pkg-config" | "system" | "vcpkg" | "conan" => {
+        "pkg-config" | "system" | "vcpkg" | "conan" | "brew" | "nix" | "pacman" => {
             let mut table = InlineTable::new();
             if let Some(v) = version {
                 table.insert("version", v.into());

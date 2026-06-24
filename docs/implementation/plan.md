@@ -11,7 +11,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | M1 | Foundation + MVP | TASK-001 ~ 007 | 7/7 | `ordo new`, `ordo build`, `ordo run` work for a single executable project |
 | M2 | Dependency Management | TASK-008 ~ 014 | 7/7 | All provider backends, lock file, `ordo add/update/tree` |
 | M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 3/3 | Lua scripting for git deps, sandbox, caching |
-| M2.7 | Dependency Enhancements | GH #23 ~ #28 | 1/6 | alias/link_name, multi-add, new providers, platform-conditional deps |
+| M2.7 | Dependency Enhancements | GH #23 ~ #28 | 2/6 | alias/link_name, multi-add, new providers, platform-conditional deps |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 4/5 | Workspace support, full profile options, features |
 | M4 | Testing & Quality | TASK-020 ~ 024 | 0/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
@@ -56,7 +56,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Issue | Title | Status | Size |
 |-------|-------|--------|------|
 | [#23](https://github.com/NaruseNia/ordo/issues/23) | `alias` and `link_name` fields | Done | M |
-| [#24](https://github.com/NaruseNia/ordo/issues/24) | `ordo add` multiple packages | Todo | M |
+| [#24](https://github.com/NaruseNia/ordo/issues/24) | `ordo add` multiple packages | Done | M |
 | [#25](https://github.com/NaruseNia/ordo/issues/25) | System-level providers (brew, nix, pacman) | Todo | L |
 | [#26](https://github.com/NaruseNia/ordo/issues/26) | Project-level providers (clib, nuget) | Todo | L |
 | [#27](https://github.com/NaruseNia/ordo/issues/27) | Cargo provider (Rust crate C bindings) | Todo | XL |

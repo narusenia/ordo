@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 
 pub mod brew;
+pub mod clib;
 pub mod conan;
 pub mod git;
 pub mod nix;
+pub mod nuget;
 pub mod pacman;
 pub mod pkgconfig;
 pub mod system;

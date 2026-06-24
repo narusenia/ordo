@@ -69,7 +69,9 @@ pub fn run(dir: &Path, ctx: &Context) -> Result<()> {
             .as_ref()
             .map(|l| format!(" [link: {}]", l.join(", ")))
             .unwrap_or_default();
-        eprintln!("{prefix}{name} v{version_str}{source_str}{optional_str}{dev_str}{alias_str}{link_name_str}");
+        eprintln!(
+            "{prefix}{name} v{version_str}{source_str}{optional_str}{dev_str}{alias_str}{link_name_str}"
+        );
 
         if let Some(dep) = fetched.get(name.as_str()) {
             if !dep.libs.is_empty() {

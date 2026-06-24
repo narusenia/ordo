@@ -677,7 +677,7 @@ impl<'de> Deserialize<'de> for DependencySpec {
         #[serde(untagged)]
         enum Raw {
             Version(String),
-            Table(DependencyTable),
+            Table(Box<DependencyTable>),
         }
 
         #[derive(Deserialize)]

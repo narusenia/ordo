@@ -626,7 +626,11 @@ fn fetch_dependencies(
                 let on_progress = |msg: &str| {
                     sw.set_detail(msg);
                 };
-                match provider.resolve_with_progress(pkg_name, spec.version.as_deref(), &on_progress) {
+                match provider.resolve_with_progress(
+                    pkg_name,
+                    spec.version.as_deref(),
+                    &on_progress,
+                ) {
                     Ok(resolved) => {
                         sw.finish_success(
                             "Resolved",

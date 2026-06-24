@@ -371,7 +371,17 @@ type = "executable"
     fn add_pkg_config_dep() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx).unwrap();
+        run_inner(
+            tmp.path(),
+            "pkg-config",
+            "zlib",
+            None,
+            false,
+            None,
+            None,
+            &ctx,
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));
@@ -393,7 +403,17 @@ type = "executable"
     fn add_vcpkg_dep_with_version() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "vcpkg", "fmt", Some("11"), false, None, None, &ctx).unwrap();
+        run_inner(
+            tmp.path(),
+            "vcpkg",
+            "fmt",
+            Some("11"),
+            false,
+            None,
+            None,
+            &ctx,
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("version = \"11\""));
@@ -404,8 +424,27 @@ type = "executable"
     fn add_duplicate_fails() {
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
-        run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx).unwrap();
-        let result = run_inner(tmp.path(), "pkg-config", "zlib", None, false, None, None, &ctx);
+        run_inner(
+            tmp.path(),
+            "pkg-config",
+            "zlib",
+            None,
+            false,
+            None,
+            None,
+            &ctx,
+        )
+        .unwrap();
+        let result = run_inner(
+            tmp.path(),
+            "pkg-config",
+            "zlib",
+            None,
+            false,
+            None,
+            None,
+            &ctx,
+        );
         assert!(result.is_err());
     }
 
@@ -431,7 +470,17 @@ type = "executable"
         )
         .unwrap();
 
-        run_inner(tmp.path(), "system", "pthread", None, false, None, None, &ctx).unwrap();
+        run_inner(
+            tmp.path(),
+            "system",
+            "pthread",
+            None,
+            false,
+            None,
+            None,
+            &ctx,
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(tmp.path().join("Ordo.toml")).unwrap();
         assert!(content.contains("[dependencies]"));

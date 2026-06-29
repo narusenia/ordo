@@ -199,11 +199,7 @@ mod tests {
     fn detect_doctest_framework() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("test_foo.cpp");
-        fs::write(
-            &src,
-            "#include <doctest/doctest.h>\nTEST_CASE(\"foo\") {}",
-        )
-        .unwrap();
+        fs::write(&src, "#include <doctest/doctest.h>\nTEST_CASE(\"foo\") {}").unwrap();
         assert_eq!(detect_framework(&src).unwrap(), TestFramework::Doctest);
     }
 

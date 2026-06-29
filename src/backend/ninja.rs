@@ -84,7 +84,11 @@ impl<'a> NinjaGenerator<'a> {
         writeln!(out).unwrap();
 
         writeln!(out, "rule cxx").unwrap();
-        writeln!(out, "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in").unwrap();
+        writeln!(
+            out,
+            "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in"
+        )
+        .unwrap();
         writeln!(out, "  depfile = $out.d").unwrap();
         writeln!(out, "  deps = gcc").unwrap();
         writeln!(out, "  description = Compiling $in").unwrap();
@@ -408,7 +412,11 @@ impl<'a> TestNinjaGenerator<'a> {
         writeln!(out).unwrap();
 
         writeln!(out, "rule cxx").unwrap();
-        writeln!(out, "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in").unwrap();
+        writeln!(
+            out,
+            "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in"
+        )
+        .unwrap();
         writeln!(out, "  depfile = $out.d").unwrap();
         writeln!(out, "  deps = gcc").unwrap();
         writeln!(out, "  description = Compiling $in").unwrap();
@@ -460,8 +468,7 @@ impl<'a> TestNinjaGenerator<'a> {
             let rel_src = self.rel(&test.test_source);
             let obj = format!("test_{}.o", test.name);
             let cpp = is_cpp_source(&test.test_source);
-            let compile_flags =
-                self.compile_flags_str_for(cpp, &test.framework_include_dirs);
+            let compile_flags = self.compile_flags_str_for(cpp, &test.framework_include_dirs);
             let rule = if cpp { "cxx" } else { "cc" };
 
             writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
@@ -483,10 +490,7 @@ impl<'a> TestNinjaGenerator<'a> {
             }
 
             let inputs = link_inputs.join(" ");
-            let lflags = self.link_flags_str(
-                &test.framework_lib_dirs,
-                &test.framework_libs,
-            );
+            let lflags = self.link_flags_str(&test.framework_lib_dirs, &test.framework_libs);
 
             writeln!(out, "build {}: link {inputs}", rel_bin.display()).unwrap();
             if !lflags.is_empty() {
@@ -501,8 +505,7 @@ impl<'a> TestNinjaGenerator<'a> {
             let defaults: Vec<String> = test_binaries
                 .iter()
                 .map(|(_, p)| {
-                    let rel = pathdiff::diff_paths(p, &self.build_dir)
-                        .unwrap_or_else(|| p.clone());
+                    let rel = pathdiff::diff_paths(p, &self.build_dir).unwrap_or_else(|| p.clone());
                     rel.display().to_string()
                 })
                 .collect();
@@ -517,10 +520,7 @@ impl<'a> TestNinjaGenerator<'a> {
 
     fn has_cpp(&self) -> bool {
         self.lib_sources.iter().any(|s| is_cpp_source(s))
-            || self
-                .tests
-                .iter()
-                .any(|t| is_cpp_source(&t.test_source))
+            || self.tests.iter().any(|t| is_cpp_source(&t.test_source))
     }
 }
 

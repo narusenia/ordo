@@ -46,11 +46,7 @@ pub fn run(opts: &TestOptions, ctx: &Context) -> Result<()> {
     run_single_tests(opts, &project_root, None, ctx)
 }
 
-fn run_workspace_tests(
-    opts: &TestOptions,
-    root_dir: &Path,
-    ctx: &Context,
-) -> Result<()> {
+fn run_workspace_tests(opts: &TestOptions, root_dir: &Path, ctx: &Context) -> Result<()> {
     let ws = Workspace::load(root_dir)?;
 
     let members: Vec<String> = if let Some(ref target) = opts.package {
@@ -117,7 +113,8 @@ fn run_single_tests(
     )?;
 
     if test_targets.is_empty() {
-        ctx.style.warn("Warning", &format!("no tests found for `{}`", pkg.name));
+        ctx.style
+            .warn("Warning", &format!("no tests found for `{}`", pkg.name));
         return Ok(());
     }
 
@@ -133,7 +130,10 @@ fn run_single_tests(
     if filtered.is_empty() {
         ctx.style.warn(
             "Warning",
-            &format!("no tests match filter '{}'", opts.filter.as_deref().unwrap_or("")),
+            &format!(
+                "no tests match filter '{}'",
+                opts.filter.as_deref().unwrap_or("")
+            ),
         );
         return Ok(());
     }
@@ -200,7 +200,10 @@ fn run_single_tests(
         fs::canonicalize(project_root).into_diagnostic()?,
         compile_flags,
         link_flags,
-        test_lib.as_ref().map(|l| l.sources.clone()).unwrap_or_default(),
+        test_lib
+            .as_ref()
+            .map(|l| l.sources.clone())
+            .unwrap_or_default(),
         test_lib.as_ref().map(|l| l.lib_name.clone()),
         project_lib_path,
         test_specs,
@@ -249,10 +252,7 @@ fn run_single_tests(
 
     ctx.style.success(
         "Result",
-        &format!(
-            "{passed} passed in {:.2}s",
-            elapsed.as_secs_f64()
-        ),
+        &format!("{passed} passed in {:.2}s", elapsed.as_secs_f64()),
     );
 
     Ok(())
@@ -323,7 +323,8 @@ fn run_test_binaries(
 
         let passed = output.status.success();
         if passed {
-            ctx.style.success("PASS", &format!("{name} ({:.2}s)", duration.as_secs_f64()));
+            ctx.style
+                .success("PASS", &format!("{name} ({:.2}s)", duration.as_secs_f64()));
         }
 
         results.push(TestResult {
@@ -336,12 +337,14 @@ fn run_test_binaries(
     Ok(results)
 }
 
-fn framework_link_info(
-    framework: TestFramework,
-) -> (Vec<String>, Vec<PathBuf>, Vec<PathBuf>) {
+fn framework_link_info(framework: TestFramework) -> (Vec<String>, Vec<PathBuf>, Vec<PathBuf>) {
     match framework {
         TestFramework::Gtest => (
-            vec!["gtest".to_string(), "gtest_main".to_string(), "pthread".to_string()],
+            vec![
+                "gtest".to_string(),
+                "gtest_main".to_string(),
+                "pthread".to_string(),
+            ],
             Vec::new(),
             Vec::new(),
         ),
@@ -378,15 +381,13 @@ fn build_test_compile_flags(
 ) -> CompileFlags {
     use crate::core::manifest::ResolvedFeatures;
 
-    let profile = manifest
-        .resolve_profile(profile_name)
-        .unwrap_or_else(|_| {
-            if opts.release {
-                crate::core::manifest::Profile::release_defaults()
-            } else {
-                crate::core::manifest::Profile::dev_defaults()
-            }
-        });
+    let profile = manifest.resolve_profile(profile_name).unwrap_or_else(|_| {
+        if opts.release {
+            crate::core::manifest::Profile::release_defaults()
+        } else {
+            crate::core::manifest::Profile::dev_defaults()
+        }
+    });
 
     let mut include_dirs = Vec::new();
     let include_path = std::env::current_dir()
@@ -502,7 +503,10 @@ fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, ctx: &Context) -> Result<()
             eprintln!("  {line}");
         }
         ctx.style.error("Build failed", "test compilation failed");
-        bail!("test build failed (ninja exit code: {})", status.code().unwrap_or(-1));
+        bail!(
+            "test build failed (ninja exit code: {})",
+            status.code().unwrap_or(-1)
+        );
     }
 
     Ok(())

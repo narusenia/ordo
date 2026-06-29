@@ -33,6 +33,8 @@ pub struct Manifest {
     pub fmt: FmtConfig,
     #[serde(default)]
     pub lint: LintConfig,
+    #[serde(default)]
+    pub scripts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -13,7 +13,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | M2.5 | Lua Build Scripts | TASK-037 ~ 039 | 3/3 | Lua scripting for git deps, sandbox, caching |
 | M2.7 | Dependency Enhancements | GH #23 ~ #28 | 5/6 | alias/link_name, multi-add, new providers, platform-conditional deps |
 | M3 | Workspace & Profiles | TASK-015 ~ 019 | 4/5 | Workspace support, full profile options, features |
-| M4 | Testing & Quality | TASK-020 ~ 024 | 1/5 | `ordo test/fmt/lint/check`, compile_commands.json |
+| M4 | Testing & Quality | TASK-020 ~ 024 | 2/5 | `ordo test/fmt/lint/check`, compile_commands.json |
 | M5 | Advanced Build | TASK-025 ~ 029 | 0/5 | C++ modules, cross-compilation, cache, watch mode |
 | M6 | Packaging & Ecosystem | TASK-030 ~ 036 | 0/7 | Install, package, registry, IDE generation, CI, doctor, self update |
 
@@ -77,7 +77,7 @@ The implementation is organized into 6 milestones, progressing from a minimal wo
 | Task | Title | Status | Size |
 |------|-------|--------|------|
 | TASK-020 | Test Framework | Done | L |
-| TASK-021 | Format Command | Todo | S |
+| TASK-021 | Format Command | Done | S |
 | TASK-022 | Lint Command and compile_commands.json | Todo | M |
 | TASK-023 | Check Command | Todo | S |
 | TASK-024 | Scripts Command | Todo | S |
@@ -160,7 +160,7 @@ M6: Packaging & Ecosystem
 | TASK-018 | Done | REQ-PROJ-006 |
 | TASK-019 | Done | REQ-DEPS-002 |
 | TASK-020 | Done | REQ-TEST-001, REQ-TEST-002, REQ-TEST-003, REQ-TEST-004 |
-| TASK-021 | Todo | REQ-QUAL-001 |
+| TASK-021 | Done | REQ-QUAL-001 |
 | TASK-022 | Todo | REQ-QUAL-002, REQ-QUAL-004 |
 | TASK-023 | Todo | REQ-BUILD-010 |
 | TASK-024 | Todo | REQ-PROJ-005 |

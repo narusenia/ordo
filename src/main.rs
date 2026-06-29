@@ -121,8 +121,8 @@ fn main() -> Result<()> {
         Command::Fmt { check } => {
             cli::fmt::run(check, &ctx)?;
         }
-        Command::Lint { .. } => {
-            eprintln!("ordo lint: not yet implemented");
+        Command::Lint { fix } => {
+            cli::lint::run(fix, &ctx)?;
         }
         Command::Watch { .. } => {
             eprintln!("ordo watch: not yet implemented");

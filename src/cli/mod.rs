@@ -4,6 +4,7 @@ pub mod clean;
 pub mod context;
 pub mod fmt;
 pub mod init;
+pub mod lint;
 pub mod new;
 pub mod run;
 pub mod test;

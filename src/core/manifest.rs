@@ -31,6 +31,8 @@ pub struct Manifest {
     pub test: TestConfig,
     #[serde(default)]
     pub fmt: FmtConfig,
+    #[serde(default)]
+    pub lint: LintConfig,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -38,6 +40,13 @@ pub struct Manifest {
 pub struct FmtConfig {
     pub tool: Option<String>,
     pub style: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct LintConfig {
+    pub tool: Option<String>,
+    pub config: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

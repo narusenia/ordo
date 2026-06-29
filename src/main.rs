@@ -89,8 +89,28 @@ fn main() -> Result<()> {
                 &ctx,
             )?;
         }
-        Command::Test { .. } => {
-            eprintln!("ordo test: not yet implemented");
+        Command::Test {
+            filter,
+            jobs,
+            release,
+            profile,
+            features,
+            no_default_features,
+            all_features,
+            package,
+        } => {
+            let opts = cli::test::TestOptions {
+                filter,
+                jobs,
+                release,
+                profile,
+                features,
+                no_default_features,
+                all_features,
+                package,
+                verbose: cli.verbose,
+            };
+            cli::test::run(&opts, &ctx)?;
         }
         Command::Check => {
             eprintln!("ordo check: not yet implemented");

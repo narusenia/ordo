@@ -27,6 +27,41 @@ pub struct Manifest {
     pub dev_dependencies: std::collections::BTreeMap<String, DependencySpec>,
     #[serde(default)]
     pub target: std::collections::BTreeMap<String, TargetSection>,
+    #[serde(default)]
+    pub test: TestConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct TestConfig {
+    pub src: Option<String>,
+    pub framework: Option<TestFramework>,
+    #[serde(default = "default_true")]
+    pub harness: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TestFramework {
+    Plain,
+    Gtest,
+    Catch2,
+    Doctest,
+}
+
+impl fmt::Display for TestFramework {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Plain => write!(f, "plain"),
+            Self::Gtest => write!(f, "gtest"),
+            Self::Catch2 => write!(f, "catch2"),
+            Self::Doctest => write!(f, "doctest"),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

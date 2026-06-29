@@ -77,15 +77,19 @@ impl<'a> NinjaGenerator<'a> {
         let cpp_exe = self.compiler.cpp_executable();
 
         writeln!(out, "rule cc").unwrap();
-        writeln!(out, "  command = {c_exe} $flags $in").unwrap();
-        writeln!(out, "  depfile = $depfile").unwrap();
+        writeln!(out, "  command = {c_exe} $flags -MD -MF $out.d -o $out $in").unwrap();
+        writeln!(out, "  depfile = $out.d").unwrap();
         writeln!(out, "  deps = gcc").unwrap();
         writeln!(out, "  description = Compiling $in").unwrap();
         writeln!(out).unwrap();
 
         writeln!(out, "rule cxx").unwrap();
-        writeln!(out, "  command = {cpp_exe} $flags $in").unwrap();
-        writeln!(out, "  depfile = $depfile").unwrap();
+        writeln!(
+            out,
+            "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in"
+        )
+        .unwrap();
+        writeln!(out, "  depfile = $out.d").unwrap();
         writeln!(out, "  deps = gcc").unwrap();
         writeln!(out, "  description = Compiling $in").unwrap();
         writeln!(out).unwrap();
@@ -120,14 +124,12 @@ impl<'a> NinjaGenerator<'a> {
             let rel_src = self.rel(src);
             let stem = src.file_stem().unwrap_or_default().to_string_lossy();
             let obj = format!("{stem}.o");
-            let depfile = format!("{stem}.d");
 
             let cpp = is_cpp_source(src);
             let compile_flags = self.compile_flags_str_for(cpp);
             let rule = if cpp { "cxx" } else { "cc" };
 
             writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
-            writeln!(out, "  depfile = {depfile}").unwrap();
             writeln!(out, "  flags = {compile_flags}").unwrap();
             writeln!(out).unwrap();
 
@@ -182,13 +184,6 @@ impl<'a> NinjaGenerator<'a> {
             let rel_inc = self.rel(inc);
             flags.push(format!("-I{}", rel_inc.display()));
         }
-
-        flags.push("-MD".to_string());
-        flags.push("-MF".to_string());
-        flags.push("$depfile".to_string());
-
-        flags.push("-o".to_string());
-        flags.push("$out".to_string());
 
         flags.join(" ")
     }
@@ -282,6 +277,251 @@ struct CompileCommandEntry {
     directory: String,
     file: String,
     arguments: Vec<String>,
+}
+
+pub struct TestBinarySpec {
+    pub name: String,
+    pub test_source: PathBuf,
+    pub framework_libs: Vec<String>,
+    pub framework_lib_dirs: Vec<PathBuf>,
+    pub framework_include_dirs: Vec<PathBuf>,
+}
+
+pub struct TestNinjaGenerator<'a> {
+    compiler: &'a dyn Compiler,
+    build_dir: PathBuf,
+    project_root: PathBuf,
+    compile_flags: CompileFlags,
+    link_flags: LinkFlags,
+    lib_sources: Vec<PathBuf>,
+    lib_name: Option<String>,
+    project_lib_path: Option<PathBuf>,
+    tests: Vec<TestBinarySpec>,
+}
+
+pub struct TestNinjaOutput {
+    pub build_ninja: String,
+    pub test_binaries: Vec<(String, PathBuf)>,
+}
+
+impl<'a> TestNinjaGenerator<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        compiler: &'a dyn Compiler,
+        build_dir: PathBuf,
+        project_root: PathBuf,
+        compile_flags: CompileFlags,
+        link_flags: LinkFlags,
+        lib_sources: Vec<PathBuf>,
+        lib_name: Option<String>,
+        project_lib_path: Option<PathBuf>,
+        tests: Vec<TestBinarySpec>,
+    ) -> Self {
+        Self {
+            compiler,
+            build_dir,
+            project_root,
+            compile_flags,
+            link_flags,
+            lib_sources,
+            lib_name,
+            project_lib_path,
+            tests,
+        }
+    }
+
+    fn rel(&self, path: &Path) -> PathBuf {
+        let abs_target = self.project_root.join(path);
+        pathdiff::diff_paths(&abs_target, &self.build_dir).unwrap_or(abs_target)
+    }
+
+    fn compile_flags_str_for(&self, cpp: bool, extra_include_dirs: &[PathBuf]) -> String {
+        let mut flags = vec!["-c".to_string()];
+
+        if cpp {
+            if let Some(std) = self.compile_flags.cpp_standard {
+                flags.push(format!("-std={}", std.as_flag()));
+            }
+        } else if let Some(std) = self.compile_flags.c_standard {
+            flags.push(format!("-std={}", std.as_flag()));
+        }
+
+        flags.push(format!("-O{}", self.compile_flags.opt_level.as_flag()));
+
+        if self.compile_flags.debug {
+            flags.push("-g".to_string());
+        }
+
+        for def in &self.compile_flags.defines {
+            flags.push(format!("-D{def}"));
+        }
+
+        for inc in &self.compile_flags.include_dirs {
+            let rel_inc = self.rel(inc);
+            flags.push(format!("-I{}", rel_inc.display()));
+        }
+
+        for inc in extra_include_dirs {
+            let rel_inc = self.rel(inc);
+            flags.push(format!("-I{}", rel_inc.display()));
+        }
+
+        flags.join(" ")
+    }
+
+    fn link_flags_str(&self, extra_lib_dirs: &[PathBuf], extra_libs: &[String]) -> String {
+        let mut flags = Vec::new();
+        if let Some(linker) = self.link_flags.linker {
+            flags.push(format!("-fuse-ld={linker}"));
+        }
+        for dir in &self.link_flags.lib_dirs {
+            flags.push(format!("-L{}", dir.display()));
+        }
+        for dir in extra_lib_dirs {
+            flags.push(format!("-L{}", dir.display()));
+        }
+        for lib in &self.link_flags.libs {
+            flags.push(format!("-l{lib}"));
+        }
+        for lib in extra_libs {
+            flags.push(format!("-l{lib}"));
+        }
+        for fw in &self.link_flags.frameworks {
+            flags.push("-framework".to_string());
+            flags.push(fw.clone());
+        }
+        flags.join(" ")
+    }
+
+    pub fn generate(&self) -> TestNinjaOutput {
+        let mut out = String::new();
+        let mut test_binaries = Vec::new();
+
+        writeln!(out, "# Generated by ordo (test build)").unwrap();
+        writeln!(out, "ninja_required_version = 1.3").unwrap();
+        writeln!(out).unwrap();
+
+        let c_exe = self.compiler.c_executable();
+        let cpp_exe = self.compiler.cpp_executable();
+
+        writeln!(out, "rule cc").unwrap();
+        writeln!(out, "  command = {c_exe} $flags -MD -MF $out.d -o $out $in").unwrap();
+        writeln!(out, "  depfile = $out.d").unwrap();
+        writeln!(out, "  deps = gcc").unwrap();
+        writeln!(out, "  description = Compiling $in").unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(out, "rule cxx").unwrap();
+        writeln!(
+            out,
+            "  command = {cpp_exe} $flags -MD -MF $out.d -o $out $in"
+        )
+        .unwrap();
+        writeln!(out, "  depfile = $out.d").unwrap();
+        writeln!(out, "  deps = gcc").unwrap();
+        writeln!(out, "  description = Compiling $in").unwrap();
+        writeln!(out).unwrap();
+
+        let link_exe = if self.has_cpp() { cpp_exe } else { c_exe };
+        writeln!(out, "rule link").unwrap();
+        writeln!(out, "  command = {link_exe} $flags $in -o $out").unwrap();
+        writeln!(out, "  description = Linking $out").unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(out, "rule ar").unwrap();
+        writeln!(out, "  command = ar rcs $out $in").unwrap();
+        writeln!(out, "  description = Archiving $out").unwrap();
+        writeln!(out).unwrap();
+
+        // Build test library from non-main sources (for executable projects)
+        let mut lib_object = None;
+        if !self.lib_sources.is_empty()
+            && let Some(ref lib_name) = self.lib_name
+        {
+            let mut lib_objects = Vec::new();
+            for src in &self.lib_sources {
+                let rel_src = self.rel(src);
+                let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+                let obj = format!("lib_{stem}.o");
+                let cpp = is_cpp_source(src);
+                let compile_flags = self.compile_flags_str_for(cpp, &[]);
+                let rule = if cpp { "cxx" } else { "cc" };
+
+                writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
+                writeln!(out, "  flags = {compile_flags}").unwrap();
+                writeln!(out).unwrap();
+
+                lib_objects.push(obj);
+            }
+
+            let lib_file = format!("lib{lib_name}.a");
+            let objs = lib_objects.join(" ");
+            writeln!(out, "build {lib_file}: ar {objs}").unwrap();
+            writeln!(out).unwrap();
+
+            lib_object = Some(lib_file);
+        }
+
+        // Build each test binary
+        let output_dir = self.build_dir.parent().unwrap_or(Path::new("."));
+        for test in &self.tests {
+            let rel_src = self.rel(&test.test_source);
+            let obj = format!("test_{}.o", test.name);
+            let cpp = is_cpp_source(&test.test_source);
+            let compile_flags = self.compile_flags_str_for(cpp, &test.framework_include_dirs);
+            let rule = if cpp { "cxx" } else { "cc" };
+
+            writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
+            writeln!(out, "  flags = {compile_flags}").unwrap();
+            writeln!(out).unwrap();
+
+            let bin_path = output_dir.join(&test.name);
+            let rel_bin = pathdiff::diff_paths(&bin_path, &self.build_dir)
+                .unwrap_or_else(|| bin_path.clone());
+
+            let mut link_inputs = vec![obj];
+
+            if let Some(ref lib_file) = lib_object {
+                link_inputs.push(lib_file.clone());
+            }
+            if let Some(ref project_lib) = self.project_lib_path {
+                let rel_lib = self.rel(project_lib);
+                link_inputs.push(rel_lib.display().to_string());
+            }
+
+            let inputs = link_inputs.join(" ");
+            let lflags = self.link_flags_str(&test.framework_lib_dirs, &test.framework_libs);
+
+            writeln!(out, "build {}: link {inputs}", rel_bin.display()).unwrap();
+            if !lflags.is_empty() {
+                writeln!(out, "  flags = {lflags}").unwrap();
+            }
+            writeln!(out).unwrap();
+
+            test_binaries.push((test.name.clone(), bin_path));
+        }
+
+        if !test_binaries.is_empty() {
+            let defaults: Vec<String> = test_binaries
+                .iter()
+                .map(|(_, p)| {
+                    let rel = pathdiff::diff_paths(p, &self.build_dir).unwrap_or_else(|| p.clone());
+                    rel.display().to_string()
+                })
+                .collect();
+            writeln!(out, "default {}", defaults.join(" ")).unwrap();
+        }
+
+        TestNinjaOutput {
+            build_ninja: out,
+            test_binaries,
+        }
+    }
+
+    fn has_cpp(&self) -> bool {
+        self.lib_sources.iter().any(|s| is_cpp_source(s))
+            || self.tests.iter().any(|t| is_cpp_source(&t.test_source))
+    }
 }
 
 #[cfg(test)]

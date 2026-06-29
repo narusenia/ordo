@@ -29,6 +29,8 @@ pub struct FetchedDep {
     pub name: String,
     pub include_dirs: Vec<PathBuf>,
     pub lib_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub defines: Vec<String>,
     pub libs: Vec<String>,
     pub frameworks: Vec<String>,
 }

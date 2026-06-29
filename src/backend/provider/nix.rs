@@ -81,6 +81,7 @@ impl Provider for NixProvider {
             lib_dirs,
             libs: vec![dep.name.clone()],
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }

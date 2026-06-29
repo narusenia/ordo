@@ -83,6 +83,7 @@ impl Provider for PkgConfigProvider {
             lib_dirs,
             libs: lib_names,
             frameworks,
+            defines: Vec::new(),
         })
     }
 }

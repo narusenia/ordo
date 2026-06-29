@@ -186,6 +186,7 @@ impl GitProvider {
             lib_dirs: Vec::new(),
             libs: Vec::new(),
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }
@@ -302,6 +303,7 @@ impl GitProvider {
                 lib_dirs: result.lib_dirs.into_iter().map(PathBuf::from).collect(),
                 libs: result.libs,
                 frameworks: Vec::new(),
+                defines: Vec::new(),
             });
         }
 

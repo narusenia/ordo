@@ -225,6 +225,7 @@ pub struct ResolvedFeatures {
     pub enabled: std::collections::BTreeSet<String>,
     pub activated_deps: std::collections::BTreeSet<String>,
     pub defines: Vec<String>,
+    pub dep_features: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl ResolvedFeatures {
@@ -258,6 +259,9 @@ impl ResolvedFeatures {
             }
         }
 
+        let mut dep_features: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+
         let mut queue: Vec<String> = enabled.iter().cloned().collect();
         let mut visited = std::collections::HashSet::new();
 
@@ -270,11 +274,14 @@ impl ResolvedFeatures {
                 for dep in deps {
                     if let Some(dep_name) = dep.strip_prefix("dep:") {
                         activated_deps.insert(dep_name.to_string());
-                    } else {
-                        if !enabled.contains(dep) {
-                            enabled.insert(dep.clone());
-                            queue.push(dep.clone());
-                        }
+                    } else if let Some((dep_name, dep_feat)) = dep.split_once('/') {
+                        dep_features
+                            .entry(dep_name.to_string())
+                            .or_default()
+                            .push(dep_feat.to_string());
+                    } else if !enabled.contains(dep) {
+                        enabled.insert(dep.clone());
+                        queue.push(dep.clone());
                     }
                 }
             } else if !feature_map.default.is_empty() || !feature_map.features.is_empty() {
@@ -306,6 +313,7 @@ impl ResolvedFeatures {
             enabled,
             activated_deps,
             defines,
+            dep_features,
         })
     }
 }

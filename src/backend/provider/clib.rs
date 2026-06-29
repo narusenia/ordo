@@ -70,6 +70,7 @@ impl Provider for ClibProvider {
             lib_dirs: Vec::new(),
             libs: Vec::new(),
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }

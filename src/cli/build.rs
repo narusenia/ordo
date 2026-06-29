@@ -365,7 +365,7 @@ fn resolve_and_fetch(
 
     let existing_lock = LockFile::load(&lock_path).ok();
 
-    let activated_deps = {
+    let resolved_features = {
         use crate::core::manifest::ResolvedFeatures;
         ResolvedFeatures::resolve(
             manifest,
@@ -374,13 +374,16 @@ fn resolve_and_fetch(
             ctx.all_features,
         )
         .ok()
-        .map(|r| r.activated_deps)
     };
-    let resolved = resolve_dependencies_with_features(
-        manifest,
-        existing_lock.as_ref(),
-        activated_deps.as_ref(),
-    )?;
+    let activated_deps = resolved_features.as_ref().map(|r| r.activated_deps.clone());
+    let activated_deps_ref = activated_deps.as_ref();
+    let forwarded_dep_features = resolved_features
+        .as_ref()
+        .map(|r| &r.dep_features)
+        .cloned()
+        .unwrap_or_default();
+    let resolved =
+        resolve_dependencies_with_features(manifest, existing_lock.as_ref(), activated_deps_ref)?;
 
     let is_fresh = existing_lock
         .as_ref()
@@ -414,7 +417,7 @@ fn resolve_and_fetch(
         );
     }
 
-    let fetch_result = fetch_dependencies(manifest, ctx, ui)?;
+    let fetch_result = fetch_dependencies(manifest, ctx, &forwarded_dep_features, ui)?;
 
     let mut lock = LockFile::load(&lock_path).unwrap_or(LockFile {
         version: 1,
@@ -497,6 +500,7 @@ struct FetchResult {
 fn fetch_dependencies(
     manifest: &Manifest,
     ctx: &mut BuildContext,
+    forwarded_dep_features: &std::collections::BTreeMap<String, Vec<String>>,
     ui: &Context,
 ) -> Result<FetchResult> {
     let mut fetched = Vec::new();
@@ -860,7 +864,11 @@ fn fetch_dependencies(
                 {
                     resolved_versions.insert(name.clone(), pkg.version.clone());
                 }
-                fetch_path_dep(name, &dep_dir, ctx, ui)?
+                let mut extra_features: Vec<String> = spec.features.clone();
+                if let Some(fwd) = forwarded_dep_features.get(name) {
+                    extra_features.extend(fwd.iter().cloned());
+                }
+                fetch_path_dep(name, &dep_dir, &extra_features, ctx, ui)?
             }
             _ => continue,
         };
@@ -924,7 +932,13 @@ fn build_compile_flags(
         warnings: profile.warnings,
         coverage: profile.coverage,
         split_debug: profile.split_debug,
-        defines: resolve_feature_defines(manifest, ctx),
+        defines: {
+            let mut d = resolve_feature_defines(manifest, ctx);
+            for dep in deps {
+                d.extend(dep.defines.iter().cloned());
+            }
+            d
+        },
         include_dirs,
     }
 }
@@ -932,6 +946,7 @@ fn build_compile_flags(
 fn fetch_path_dep(
     name: &str,
     dep_dir: &Path,
+    extra_features: &[String],
     ctx: &mut BuildContext,
     ui: &Context,
 ) -> Result<FetchedDep> {
@@ -955,7 +970,13 @@ fn fetch_path_dep(
     let canonical_dep = fs::canonicalize(dep_dir).into_diagnostic()?;
 
     if let Some(cached) = ctx.built_deps.get(&canonical_dep) {
-        return Ok(cached.clone());
+        let mut result = cached.clone();
+        if result.defines.is_empty()
+            && let Ok(dep_manifest) = Manifest::load(&dep_manifest_path)
+        {
+            result.defines = resolve_feature_defines(&dep_manifest, ctx);
+        }
+        return Ok(result);
     }
 
     if ctx.building.contains(&canonical_dep) {
@@ -985,16 +1006,27 @@ fn fetch_path_dep(
             lib_dirs: Vec::new(),
             libs: Vec::new(),
             frameworks: Vec::new(),
+            defines: Vec::new(),
         });
     }
 
     let parent_root = ctx.project_root.clone();
+    let parent_features = ctx.features.clone();
+    let parent_no_default = ctx.no_default_features;
+    let parent_all = ctx.all_features;
+
     ctx.project_root = dep_dir.to_path_buf();
+    if !extra_features.is_empty() {
+        ctx.features.extend(extra_features.iter().cloned());
+    }
     ctx.building.insert(canonical_dep.clone());
 
     let build_result = build_project(ctx, ui);
 
     ctx.project_root = parent_root;
+    ctx.features = parent_features;
+    ctx.no_default_features = parent_no_default;
+    ctx.all_features = parent_all;
     ctx.building.remove(&canonical_dep);
 
     build_result?;
@@ -1024,6 +1056,8 @@ fn fetch_path_dep(
         }
     }
 
+    let dep_feature_defines = resolve_feature_defines(&dep_manifest, ctx);
+
     ui.style.success("Built", &format!("{name} (path)"));
 
     let dep = FetchedDep {
@@ -1032,6 +1066,7 @@ fn fetch_path_dep(
         lib_dirs,
         libs,
         frameworks,
+        defines: dep_feature_defines,
     };
 
     ctx.built_deps.insert(canonical_dep, dep.clone());
@@ -1075,6 +1110,7 @@ fn collect_member_as_fetched_dep(
         lib_dirs,
         libs,
         frameworks,
+        defines: Vec::new(),
     })
 }
 
@@ -1407,7 +1443,7 @@ mod tests {
             building: HashSet::new(),
             built_deps: std::collections::HashMap::new(),
         };
-        let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &mut ctx, &ui);
+        let result = fetch_path_dep("mylib", Path::new("/nonexistent/mylib"), &[], &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("does not exist"), "got: {msg}");
@@ -1434,7 +1470,7 @@ mod tests {
             building: HashSet::new(),
             built_deps: std::collections::HashMap::new(),
         };
-        let result = fetch_path_dep("mylib", tmp.path(), &mut ctx, &ui);
+        let result = fetch_path_dep("mylib", tmp.path(), &[], &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("no Ordo.toml"), "got: {msg}");
@@ -1474,7 +1510,7 @@ type = "static-library"
             built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
-        let result = fetch_path_dep("mylib", &dep_dir, &mut ctx, &ui);
+        let result = fetch_path_dep("mylib", &dep_dir, &[], &mut ctx, &ui);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("circular"), "got: {msg}");
@@ -1515,7 +1551,7 @@ type = "static-library"
             built_deps: std::collections::HashMap::new(),
         };
         let ui = Context::default_for_test();
-        let dep = fetch_path_dep("myheader", &dep_dir, &mut ctx, &ui).unwrap();
+        let dep = fetch_path_dep("myheader", &dep_dir, &[], &mut ctx, &ui).unwrap();
         assert_eq!(dep.name, "myheader");
         assert_eq!(dep.include_dirs.len(), 1);
         assert!(dep.include_dirs[0].ends_with("include"));
@@ -1535,6 +1571,7 @@ type = "static-library"
                 lib_dirs: vec![PathBuf::from("/usr/lib")],
                 libs: vec!["fmt".to_string()],
                 frameworks: Vec::new(),
+                defines: Vec::new(),
             },
             FetchedDep {
                 name: "zlib".to_string(),
@@ -1542,6 +1579,7 @@ type = "static-library"
                 lib_dirs: Vec::new(),
                 libs: vec!["z".to_string()],
                 frameworks: Vec::new(),
+                defines: Vec::new(),
             },
         ];
 

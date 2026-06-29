@@ -150,6 +150,7 @@ impl ConanProvider {
             lib_dirs,
             libs,
             frameworks,
+            defines: Vec::new(),
         })
     }
 

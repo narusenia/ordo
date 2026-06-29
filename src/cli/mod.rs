@@ -141,6 +141,18 @@ pub enum Command {
         /// Run a specific workspace member
         #[arg(short, long)]
         package: Option<String>,
+
+        /// Enabled features (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+
+        /// Disable default features
+        #[arg(long)]
+        no_default_features: bool,
+
+        /// Enable all features
+        #[arg(long)]
+        all_features: bool,
     },
 
     /// Run tests

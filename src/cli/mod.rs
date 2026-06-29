@@ -5,6 +5,7 @@ pub mod context;
 pub mod init;
 pub mod new;
 pub mod run;
+pub mod test;
 pub mod tree;
 pub mod update;
 
@@ -164,6 +165,30 @@ pub enum Command {
         /// Number of parallel test jobs
         #[arg(short, long)]
         jobs: Option<u32>,
+
+        /// Build with release profile
+        #[arg(long)]
+        release: bool,
+
+        /// Build with a named profile
+        #[arg(long, conflicts_with = "release")]
+        profile: Option<String>,
+
+        /// Enabled features (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+
+        /// Disable default features
+        #[arg(long)]
+        no_default_features: bool,
+
+        /// Enable all features
+        #[arg(long)]
+        all_features: bool,
+
+        /// Test a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Syntax check without producing binaries

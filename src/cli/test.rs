@@ -1,6 +1,8 @@
+use super::build::{DEP_CACHE_FILE, load_dep_cache};
 use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, LinkFlags};
 use crate::backend::ninja::{TestBinarySpec, TestNinjaGenerator};
+use crate::backend::provider::FetchedDep;
 use crate::core::manifest::{CompilerKind, CppStandard, Manifest, PackageType, TestFramework};
 use crate::core::tester;
 use crate::core::workspace::Workspace;
@@ -155,8 +157,10 @@ fn run_single_tests(
         .unwrap_or_else(auto_detect_compiler);
     let compiler = compiler::create_compiler(compiler_kind);
 
-    let compile_flags = build_test_compile_flags(&manifest, &profile_name, opts);
-    let link_flags = build_test_link_flags(&manifest, &profile_name);
+    let fetched_deps = load_cached_deps(&profile_dir);
+    let compile_flags =
+        build_test_compile_flags(&manifest, project_root, &profile_name, opts, &fetched_deps);
+    let link_flags = build_test_link_flags(&manifest, &profile_name, &fetched_deps);
 
     let test_lib = tester::extract_test_library(project_root, &pkg.name, pkg.package_type)?;
 
@@ -230,7 +234,7 @@ fn run_single_tests(
 
     for r in &results {
         if !r.passed {
-            ctx.style.error("FAIL", &r.name);
+            ctx.style.error("Failed", &r.name);
             if !r.output.is_empty() {
                 for line in r.output.lines() {
                     eprintln!("  {line}");
@@ -239,9 +243,11 @@ fn run_single_tests(
         }
     }
 
+    ctx.style.summary_bar();
+
     if failed > 0 {
         ctx.style.error(
-            "Result",
+            "Tests",
             &format!(
                 "{passed} passed, {failed} failed in {:.2}s",
                 elapsed.as_secs_f64()
@@ -251,7 +257,7 @@ fn run_single_tests(
     }
 
     ctx.style.success(
-        "Result",
+        "Tests",
         &format!("{passed} passed in {:.2}s", elapsed.as_secs_f64()),
     );
 
@@ -323,8 +329,10 @@ fn run_test_binaries(
 
         let passed = output.status.success();
         if passed {
-            ctx.style
-                .success("PASS", &format!("{name} ({:.2}s)", duration.as_secs_f64()));
+            ctx.style.success(
+                "Passed",
+                &format!("{name} ({:.2}s)", duration.as_secs_f64()),
+            );
         }
 
         results.push(TestResult {
@@ -374,10 +382,17 @@ fn auto_detect_compiler() -> CompilerKind {
         .unwrap_or(CompilerKind::Clang)
 }
 
+fn load_cached_deps(profile_dir: &Path) -> Vec<FetchedDep> {
+    let cache_path = profile_dir.join(DEP_CACHE_FILE);
+    load_dep_cache(&cache_path).unwrap_or_default()
+}
+
 fn build_test_compile_flags(
     manifest: &Manifest,
+    project_root: &Path,
     profile_name: &str,
     opts: &TestOptions,
+    deps: &[FetchedDep],
 ) -> CompileFlags {
     use crate::core::manifest::ResolvedFeatures;
 
@@ -390,18 +405,19 @@ fn build_test_compile_flags(
     });
 
     let mut include_dirs = Vec::new();
-    let include_path = std::env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join("include"))
-        .unwrap_or_default();
+    let include_path = project_root.join("include");
     if include_path.exists()
         && let Ok(canonical) = fs::canonicalize(&include_path)
     {
         include_dirs.push(canonical);
     }
 
+    for dep in deps {
+        include_dirs.extend(dep.include_dirs.iter().cloned());
+    }
+
     let has_cpp = manifest.language.cpp.is_some() || manifest.language.c.is_none();
-    let feature_defines = ResolvedFeatures::resolve(
+    let mut defines = ResolvedFeatures::resolve(
         manifest,
         &opts.features,
         opts.no_default_features,
@@ -409,6 +425,10 @@ fn build_test_compile_flags(
     )
     .map(|r| r.defines)
     .unwrap_or_default();
+
+    for dep in deps {
+        defines.extend(dep.defines.iter().cloned());
+    }
 
     CompileFlags {
         cpp_standard: if has_cpp {
@@ -427,12 +447,16 @@ fn build_test_compile_flags(
         warnings: profile.warnings,
         coverage: profile.coverage,
         split_debug: profile.split_debug,
-        defines: feature_defines,
+        defines,
         include_dirs,
     }
 }
 
-fn build_test_link_flags(manifest: &Manifest, profile_name: &str) -> LinkFlags {
+fn build_test_link_flags(
+    manifest: &Manifest,
+    profile_name: &str,
+    deps: &[FetchedDep],
+) -> LinkFlags {
     let profile = manifest
         .resolve_profile(profile_name)
         .unwrap_or_else(|_| crate::core::manifest::Profile::dev_defaults());
@@ -444,10 +468,23 @@ fn build_test_link_flags(manifest: &Manifest, profile_name: &str) -> LinkFlags {
         _ => None,
     });
 
+    let mut lib_dirs = Vec::new();
+    let mut libs = Vec::new();
+    let mut frameworks = Vec::new();
+
+    for dep in deps {
+        lib_dirs.extend(dep.lib_dirs.iter().cloned());
+        libs.extend(dep.libs.iter().cloned());
+        frameworks.extend(dep.frameworks.iter().cloned());
+    }
+
+    frameworks.sort();
+    frameworks.dedup();
+
     LinkFlags {
-        lib_dirs: Vec::new(),
-        libs: Vec::new(),
-        frameworks: Vec::new(),
+        lib_dirs,
+        libs,
+        frameworks,
         linker,
         lto: profile.lto,
         strip: profile.strip,

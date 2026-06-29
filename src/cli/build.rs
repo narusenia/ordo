@@ -337,7 +337,7 @@ fn auto_detect_compiler() -> CompilerKind {
         .unwrap_or(CompilerKind::Clang)
 }
 
-const DEP_CACHE_FILE: &str = ".dep-cache.json";
+pub(crate) const DEP_CACHE_FILE: &str = ".dep-cache.json";
 
 fn resolve_and_fetch(
     manifest: &Manifest,
@@ -440,7 +440,7 @@ fn resolve_and_fetch(
     Ok(fetch_result.deps)
 }
 
-fn load_dep_cache(path: &Path) -> Result<Vec<FetchedDep>> {
+pub(crate) fn load_dep_cache(path: &Path) -> Result<Vec<FetchedDep>> {
     let content = fs::read_to_string(path).into_diagnostic()?;
     serde_json::from_str(&content).into_diagnostic()
 }

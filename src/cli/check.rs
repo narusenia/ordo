@@ -1,6 +1,7 @@
 use super::context::Context;
 use crate::backend::compiler::{self, CompileFlags, Compiler};
-use crate::core::manifest::{CompilerKind, CppStandard, Manifest};
+use crate::core::manifest::{CompilerKind, CppStandard, Manifest, ResolvedFeatures};
+use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -9,7 +10,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-pub fn run(ctx: &Context) -> Result<()> {
+pub fn run(
+    release: bool,
+    profile: Option<&str>,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    package: Option<&str>,
+    ctx: &Context,
+) -> Result<()> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let manifest_path = project_root.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -17,6 +26,91 @@ pub fn run(ctx: &Context) -> Result<()> {
     }
 
     let manifest = Manifest::load(&manifest_path)?;
+    let profile_name = resolve_profile_name(release, profile);
+
+    if manifest.is_workspace() {
+        return run_workspace_check(
+            &project_root,
+            &profile_name,
+            features,
+            no_default_features,
+            all_features,
+            package,
+            ctx,
+        );
+    }
+
+    run_single_check(
+        &project_root,
+        &manifest,
+        &profile_name,
+        features,
+        no_default_features,
+        all_features,
+        ctx,
+    )
+}
+
+fn run_workspace_check(
+    root_dir: &Path,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    package: Option<&str>,
+    ctx: &Context,
+) -> Result<()> {
+    let ws = Workspace::load(root_dir)?;
+
+    let members: Vec<String> = if let Some(target) = package {
+        if ws.find_member(target).is_none() {
+            let available = ws.member_names().join(", ");
+            bail!(
+                "package '{}' not found in workspace; available members: {}",
+                target,
+                available
+            );
+        }
+        vec![target.to_string()]
+    } else {
+        ws.member_names().into_iter().map(String::from).collect()
+    };
+
+    let mut total_fail = 0u32;
+    for name in &members {
+        let member = ws.find_member(name).unwrap();
+        let member_dir = root_dir.join(&member.dir);
+        let member_manifest = Manifest::load(&member_dir.join("Ordo.toml"))?;
+        if let Err(e) = run_single_check(
+            &member_dir,
+            &member_manifest,
+            profile_name,
+            features,
+            no_default_features,
+            all_features,
+            ctx,
+        ) {
+            ctx.style.error("Failed", &format!("{name}: {e}"));
+            total_fail += 1;
+        }
+    }
+
+    if total_fail > 0 {
+        bail!("check failed for {total_fail} member(s)");
+    }
+
+    Ok(())
+}
+
+fn run_single_check(
+    project_root: &Path,
+    manifest: &Manifest,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    ctx: &Context,
+) -> Result<()> {
     let pkg = manifest.package.as_ref().ok_or_else(|| {
         miette::miette!(
             "cannot check '{}': no [package] section",
@@ -36,11 +130,18 @@ pub fn run(ctx: &Context) -> Result<()> {
         bail!("no source files found in {}", src_dir.display());
     }
 
-    let canonical_root = fs::canonicalize(&project_root).into_diagnostic()?;
+    let canonical_root = fs::canonicalize(project_root).into_diagnostic()?;
     let build_dir = project_root.join("target").join("check");
     fs::create_dir_all(&build_dir).into_diagnostic()?;
 
-    let compile_flags = build_check_flags(&manifest);
+    let compile_flags = build_check_flags(
+        manifest,
+        project_root,
+        profile_name,
+        features,
+        no_default_features,
+        all_features,
+    );
     let syntax_flag = compiler.syntax_only_flag();
 
     let ninja_content = generate_check_ninja(
@@ -55,6 +156,10 @@ pub fn run(ctx: &Context) -> Result<()> {
 
     ctx.style.header(&format!("Checking {}", pkg.name));
     let start = Instant::now();
+
+    let spinner = ctx
+        .style
+        .create_spinner(&format!("Checking {} files...", sources.len()));
 
     let mut cmd = Command::new("ninja");
     cmd.arg("-C").arg(&build_dir);
@@ -83,6 +188,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         }
     }
 
+    spinner.finish_and_clear();
     let status = child.wait().into_diagnostic()?;
     let stderr_lines = stderr_handle.join().unwrap_or_default();
     let elapsed = start.elapsed();
@@ -101,7 +207,12 @@ pub fn run(ctx: &Context) -> Result<()> {
 
     ctx.style.success(
         "Checked",
-        &format!("{} files in {:.2}s", sources.len(), elapsed.as_secs_f64()),
+        &format!(
+            "{} ({} files in {:.2}s)",
+            pkg.name,
+            sources.len(),
+            elapsed.as_secs_f64()
+        ),
     );
     Ok(())
 }
@@ -191,18 +302,31 @@ fn compile_flags_str(
     parts.join(" ")
 }
 
-fn build_check_flags(manifest: &Manifest) -> CompileFlags {
+fn build_check_flags(
+    manifest: &Manifest,
+    project_root: &Path,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+) -> CompileFlags {
+    let profile = manifest
+        .resolve_profile(profile_name)
+        .unwrap_or_else(|_| crate::core::manifest::Profile::dev_defaults());
+
     let has_cpp = manifest.language.cpp.is_some() || manifest.language.c.is_none();
 
     let mut include_dirs = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        let inc = cwd.join("include");
-        if inc.exists()
-            && let Ok(canonical) = fs::canonicalize(&inc)
-        {
-            include_dirs.push(canonical);
-        }
+    let inc = project_root.join("include");
+    if inc.exists()
+        && let Ok(canonical) = fs::canonicalize(&inc)
+    {
+        include_dirs.push(canonical);
     }
+
+    let defines = ResolvedFeatures::resolve(manifest, features, no_default_features, all_features)
+        .map(|r| r.defines)
+        .unwrap_or_default();
 
     CompileFlags {
         cpp_standard: if has_cpp {
@@ -211,18 +335,28 @@ fn build_check_flags(manifest: &Manifest) -> CompileFlags {
             None
         },
         c_standard: manifest.language.c,
-        opt_level: crate::core::manifest::OptLevel::O0,
+        opt_level: profile.opt_level,
         debug: false,
         assertions: false,
         sanitize: Vec::new(),
         pic: false,
         rtti: true,
         exceptions: true,
-        warnings: crate::core::manifest::WarningLevel::All,
+        warnings: profile.warnings,
         coverage: false,
         split_debug: false,
-        defines: Vec::new(),
+        defines,
         include_dirs,
+    }
+}
+
+fn resolve_profile_name(release: bool, profile: Option<&str>) -> String {
+    if let Some(p) = profile {
+        p.to_string()
+    } else if release {
+        "release".to_string()
+    } else {
+        "debug".to_string()
     }
 }
 

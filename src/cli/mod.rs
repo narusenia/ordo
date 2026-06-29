@@ -196,7 +196,31 @@ pub enum Command {
     },
 
     /// Syntax check without producing binaries
-    Check,
+    Check {
+        /// Build with release profile
+        #[arg(long)]
+        release: bool,
+
+        /// Build with a named profile
+        #[arg(long, conflicts_with = "release")]
+        profile: Option<String>,
+
+        /// Enabled features (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+
+        /// Disable default features
+        #[arg(long)]
+        no_default_features: bool,
+
+        /// Enable all features
+        #[arg(long)]
+        all_features: bool,
+
+        /// Check a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
+    },
 
     /// Remove build artifacts
     Clean {
@@ -214,6 +238,10 @@ pub enum Command {
         /// Check formatting without modifying files
         #[arg(long)]
         check: bool,
+
+        /// Format a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Run linter
@@ -221,6 +249,10 @@ pub enum Command {
         /// Apply auto-fixes
         #[arg(long)]
         fix: bool,
+
+        /// Lint a specific workspace member
+        #[arg(short, long)]
+        package: Option<String>,
     },
 
     /// Watch for changes and re-run a command

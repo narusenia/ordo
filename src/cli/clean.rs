@@ -4,9 +4,13 @@ use miette::{IntoDiagnostic, Result};
 use std::fs;
 use std::path::Path;
 
-pub fn run(cache: bool, ctx: &Context) -> Result<()> {
+pub fn run(cache: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
     let manifest_path = cwd.join("Ordo.toml");
+
+    if let Some(pkg_name) = package {
+        return clean_package(&cwd, pkg_name, cache, ctx);
+    }
 
     let target = cwd.join("target");
     if target.exists() {
@@ -31,6 +35,60 @@ pub fn run(cache: bool, ctx: &Context) -> Result<()> {
         {
             clean_workspace_member_artifacts(&cwd, ctx);
         }
+    }
+
+    if cache {
+        clear_external_cache(ctx);
+    }
+
+    Ok(())
+}
+
+fn clean_package(root: &Path, pkg_name: &str, cache: bool, ctx: &Context) -> Result<()> {
+    use crate::core::workspace::Workspace;
+    use miette::bail;
+
+    let manifest_path = root.join("Ordo.toml");
+    if !manifest_path.exists() {
+        bail!("Ordo.toml not found in {}", root.display());
+    }
+    let manifest = Manifest::load(&manifest_path)?;
+    if !manifest.is_workspace() {
+        bail!("--package can only be used in a workspace");
+    }
+
+    let ws = Workspace::load(root)?;
+    let member = ws.find_member(pkg_name).ok_or_else(|| {
+        let available = ws.member_names().join(", ");
+        miette::miette!(
+            "package '{}' not found in workspace; available: {}",
+            pkg_name,
+            available
+        )
+    })?;
+
+    let target = root.join("target");
+    let mut cleaned = 0u64;
+    for profile in &["debug", "release"] {
+        let pkg_dir = target.join(profile).join(pkg_name);
+        if pkg_dir.exists() {
+            cleaned += dir_size(&pkg_dir);
+            fs::remove_dir_all(&pkg_dir).into_diagnostic()?;
+        }
+    }
+
+    let member_cc = root.join(&member.dir).join("compile_commands.json");
+    if member_cc.exists() {
+        let _ = fs::remove_file(&member_cc);
+    }
+
+    if cleaned > 0 {
+        ctx.style.success(
+            "Removed",
+            &format!("{pkg_name} artifacts ({} freed)", format_size(cleaned)),
+        );
+    } else {
+        ctx.style.skip("Nothing to clean", pkg_name);
     }
 
     if cache {

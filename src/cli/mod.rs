@@ -1,5 +1,6 @@
 pub mod add;
 pub mod build;
+pub mod check;
 pub mod clean;
 pub mod context;
 pub mod fmt;
@@ -7,6 +8,7 @@ pub mod init;
 pub mod lint;
 pub mod new;
 pub mod run;
+pub mod run_script;
 pub mod test;
 pub mod tree;
 pub mod update;

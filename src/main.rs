@@ -115,8 +115,8 @@ fn main() -> Result<()> {
         Command::Check => {
             cli::check::run(&ctx)?;
         }
-        Command::Clean { cache, .. } => {
-            cli::clean::run(cache, &ctx)?;
+        Command::Clean { cache, package } => {
+            cli::clean::run(cache, package.as_deref(), &ctx)?;
         }
         Command::Fmt { check } => {
             cli::fmt::run(check, &ctx)?;

@@ -1,5 +1,6 @@
 use super::context::Context;
 use crate::core::manifest::Manifest;
+use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +17,7 @@ Checks: >
   readability-*
 ";
 
-pub fn run(fix: bool, ctx: &Context) -> Result<()> {
+pub fn run(fix: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let manifest_path = project_root.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -24,8 +25,62 @@ pub fn run(fix: bool, ctx: &Context) -> Result<()> {
     }
 
     let manifest = Manifest::load(&manifest_path)?;
-    let lint_config = &manifest.lint;
 
+    if manifest.is_workspace() {
+        return run_workspace_lint(fix, package, &project_root, ctx);
+    }
+
+    run_single_lint(fix, &project_root, &manifest, ctx)
+}
+
+fn run_workspace_lint(
+    fix: bool,
+    package: Option<&str>,
+    root_dir: &Path,
+    ctx: &Context,
+) -> Result<()> {
+    let ws = Workspace::load(root_dir)?;
+
+    let members: Vec<String> = if let Some(target) = package {
+        if ws.find_member(target).is_none() {
+            let available = ws.member_names().join(", ");
+            bail!(
+                "package '{}' not found in workspace; available members: {}",
+                target,
+                available
+            );
+        }
+        vec![target.to_string()]
+    } else {
+        ws.member_names().into_iter().map(String::from).collect()
+    };
+
+    let mut total_fail = 0u32;
+    for name in &members {
+        let member = ws.find_member(name).unwrap();
+        let member_dir = root_dir.join(&member.dir);
+        let member_manifest_path = member_dir.join("Ordo.toml");
+        let member_manifest = Manifest::load(&member_manifest_path)?;
+        if let Err(e) = run_single_lint(fix, &member_dir, &member_manifest, ctx) {
+            ctx.style.error("Failed", &format!("{name}: {e}"));
+            total_fail += 1;
+        }
+    }
+
+    if total_fail > 0 {
+        bail!("lint failed for {total_fail} member(s)");
+    }
+
+    Ok(())
+}
+
+fn run_single_lint(
+    fix: bool,
+    project_root: &Path,
+    manifest: &Manifest,
+    ctx: &Context,
+) -> Result<()> {
+    let lint_config = &manifest.lint;
     let tool = resolve_tool(lint_config.tool.as_deref())?;
 
     let compile_db = project_root.join("compile_commands.json");
@@ -34,40 +89,44 @@ pub fn run(fix: bool, ctx: &Context) -> Result<()> {
             "Warning",
             "compile_commands.json not found, running build first",
         );
-        run_build(&project_root)?;
+        run_build(project_root)?;
         if !compile_db.exists() {
             bail!("compile_commands.json still not found after build");
         }
     }
 
-    let _config_file = ensure_config_file(&project_root, lint_config.config.as_deref())?;
+    let _config_file = ensure_config_file(project_root, lint_config.config.as_deref())?;
 
-    let sources = discover_lintable_sources(&project_root)?;
+    let sources = discover_lintable_sources(project_root)?;
     if sources.is_empty() {
-        ctx.style.warn("Warning", "no source files found to lint");
         return Ok(());
     }
 
-    run_lint(&tool, &project_root, &sources, fix, ctx)
-}
+    let pkg_name = manifest
+        .package
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("project");
 
-fn run_lint(
-    tool: &str,
-    project_root: &Path,
-    sources: &[PathBuf],
-    fix: bool,
-    ctx: &Context,
-) -> Result<()> {
-    let mut cmd = Command::new(tool);
+    let spinner = ctx.style.create_spinner(&format!(
+        "{} {} ({} files)...",
+        if fix { "Fixing" } else { "Linting" },
+        pkg_name,
+        sources.len()
+    ));
+
+    let mut cmd = Command::new(&tool);
     cmd.arg("-p").arg(project_root);
     if fix {
         cmd.arg("--fix");
     }
-    for src in sources {
+    for src in &sources {
         cmd.arg(src);
     }
 
     let output = cmd.output().into_diagnostic()?;
+    spinner.finish_and_clear();
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -85,16 +144,14 @@ fn run_lint(
     }
 
     if !output.status.success() {
-        let verb = if fix { "Fix" } else { "Lint" };
-        ctx.style.error(
-            &format!("{verb} failed"),
-            &format!("{} files checked", sources.len()),
-        );
+        let verb = if fix { "Fix failed" } else { "Lint failed" };
+        ctx.style.error(verb, pkg_name);
         bail!("lint found issues");
     }
 
     let verb = if fix { "Fixed" } else { "Checked" };
-    ctx.style.success(verb, &format!("{} files", sources.len()));
+    ctx.style
+        .success(verb, &format!("{pkg_name} ({} files)", sources.len()));
     Ok(())
 }
 

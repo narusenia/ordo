@@ -112,17 +112,32 @@ fn main() -> Result<()> {
             };
             cli::test::run(&opts, &ctx)?;
         }
-        Command::Check => {
-            cli::check::run(&ctx)?;
+        Command::Check {
+            release,
+            profile,
+            features,
+            no_default_features,
+            all_features,
+            package,
+        } => {
+            cli::check::run(
+                release,
+                profile.as_deref(),
+                &features,
+                no_default_features,
+                all_features,
+                package.as_deref(),
+                &ctx,
+            )?;
         }
         Command::Clean { cache, .. } => {
             cli::clean::run(cache, &ctx)?;
         }
-        Command::Fmt { check } => {
-            cli::fmt::run(check, &ctx)?;
+        Command::Fmt { check, package } => {
+            cli::fmt::run(check, package.as_deref(), &ctx)?;
         }
-        Command::Lint { fix } => {
-            cli::lint::run(fix, &ctx)?;
+        Command::Lint { fix, package } => {
+            cli::lint::run(fix, package.as_deref(), &ctx)?;
         }
         Command::Watch { .. } => {
             eprintln!("ordo watch: not yet implemented");

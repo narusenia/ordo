@@ -29,6 +29,15 @@ pub struct Manifest {
     pub target: std::collections::BTreeMap<String, TargetSection>,
     #[serde(default)]
     pub test: TestConfig,
+    #[serde(default)]
+    pub fmt: FmtConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct FmtConfig {
+    pub tool: Option<String>,
+    pub style: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

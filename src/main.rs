@@ -118,8 +118,8 @@ fn main() -> Result<()> {
         Command::Clean { cache, .. } => {
             cli::clean::run(cache, &ctx)?;
         }
-        Command::Fmt { .. } => {
-            eprintln!("ordo fmt: not yet implemented");
+        Command::Fmt { check } => {
+            cli::fmt::run(check, &ctx)?;
         }
         Command::Lint { .. } => {
             eprintln!("ordo lint: not yet implemented");

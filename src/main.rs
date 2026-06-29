@@ -75,8 +75,19 @@ fn main() -> Result<()> {
             args,
             release,
             package,
+            features,
+            no_default_features,
+            all_features,
         } => {
-            cli::run::run(&args, release, package.as_deref(), &ctx)?;
+            cli::run::run(
+                &args,
+                release,
+                package.as_deref(),
+                &features,
+                no_default_features,
+                all_features,
+                &ctx,
+            )?;
         }
         Command::Test { .. } => {
             eprintln!("ordo test: not yet implemented");

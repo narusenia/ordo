@@ -5,7 +5,16 @@ use crate::core::workspace::Workspace;
 use miette::{IntoDiagnostic, Result, bail};
 use std::process::Command;
 
-pub fn run(args: &[String], release: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
+#[allow(clippy::too_many_arguments)]
+pub fn run(
+    args: &[String],
+    release: bool,
+    package: Option<&str>,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    ctx: &Context,
+) -> Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
     let manifest_path = cwd.join("Ordo.toml");
     if !manifest_path.exists() {
@@ -15,20 +24,41 @@ pub fn run(args: &[String], release: bool, package: Option<&str>, ctx: &Context)
     let manifest = Manifest::load(&manifest_path)?;
 
     if manifest.is_workspace() {
-        return run_workspace(args, release, package, &cwd, ctx);
+        return run_workspace(
+            args,
+            release,
+            package,
+            features,
+            no_default_features,
+            all_features,
+            &cwd,
+            ctx,
+        );
     }
 
     if package.is_some() {
         bail!("-p/--package is only valid in a workspace");
     }
 
-    run_single(args, release, None, ctx)
+    run_single(
+        args,
+        release,
+        None,
+        features,
+        no_default_features,
+        all_features,
+        ctx,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_workspace(
     args: &[String],
     release: bool,
     package: Option<&str>,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
     root_dir: &std::path::Path,
     ctx: &Context,
 ) -> Result<()> {
@@ -79,19 +109,36 @@ fn run_workspace(
         );
     }
 
-    run_single(args, release, Some(&target_name), ctx)
+    run_single(
+        args,
+        release,
+        Some(&target_name),
+        features,
+        no_default_features,
+        all_features,
+        ctx,
+    )
 }
 
-fn run_single(args: &[String], release: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
+#[allow(clippy::too_many_arguments)]
+fn run_single(
+    args: &[String],
+    release: bool,
+    package: Option<&str>,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    ctx: &Context,
+) -> Result<()> {
     let build_opts = BuildOptions {
         release,
         profile: None,
         jobs: None,
         target: None,
         no_cache: false,
-        features: Vec::new(),
-        no_default_features: false,
-        all_features: false,
+        features: features.to_vec(),
+        no_default_features,
+        all_features,
         locked: false,
         frozen: false,
         verbose: 0,

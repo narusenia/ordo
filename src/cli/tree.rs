@@ -220,6 +220,7 @@ fn fetch_all_for_tree(
                     lib_dirs: Vec::new(),
                     libs: Vec::new(),
                     frameworks: Vec::new(),
+                    defines: Vec::new(),
                 })
             }
             _ => None,

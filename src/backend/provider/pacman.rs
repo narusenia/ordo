@@ -59,6 +59,7 @@ impl Provider for PacmanProvider {
             lib_dirs: Vec::new(),
             libs: vec![dep.name.clone()],
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }

@@ -194,6 +194,7 @@ impl VcpkgProvider {
             lib_dirs,
             libs,
             frameworks,
+            defines: Vec::new(),
         })
     }
 

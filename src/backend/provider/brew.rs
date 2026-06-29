@@ -81,6 +81,7 @@ impl Provider for BrewProvider {
                 lib_dirs: Vec::new(),
                 libs: vec![dep.name.clone()],
                 frameworks: Vec::new(),
+                defines: Vec::new(),
             });
         }
 
@@ -106,6 +107,7 @@ impl Provider for BrewProvider {
             lib_dirs,
             libs,
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }

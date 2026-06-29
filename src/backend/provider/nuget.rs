@@ -61,6 +61,7 @@ impl Provider for NugetProvider {
             lib_dirs,
             libs,
             frameworks: Vec::new(),
+            defines: Vec::new(),
         })
     }
 }

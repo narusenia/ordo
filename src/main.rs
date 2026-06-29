@@ -113,7 +113,7 @@ fn main() -> Result<()> {
             cli::test::run(&opts, &ctx)?;
         }
         Command::Check => {
-            eprintln!("ordo check: not yet implemented");
+            cli::check::run(&ctx)?;
         }
         Command::Clean { cache, .. } => {
             cli::clean::run(cache, &ctx)?;
@@ -180,8 +180,8 @@ fn main() -> Result<()> {
         Command::Config { .. } => {
             eprintln!("ordo config: not yet implemented");
         }
-        Command::RunScript { .. } => {
-            eprintln!("ordo run-script: not yet implemented");
+        Command::RunScript { name } => {
+            cli::run_script::run(&name, &ctx)?;
         }
         Command::SelfCmd { .. } => {
             eprintln!("ordo self: not yet implemented");

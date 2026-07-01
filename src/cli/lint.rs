@@ -118,7 +118,7 @@ fn run_single_lint(
     let mut cmd = Command::new(&tool);
     cmd.arg("-p").arg(project_root);
     if fix {
-        cmd.arg("--fix");
+        cmd.arg("--fix").arg("--fix-errors");
     }
     for src in &sources {
         cmd.arg(src);
@@ -129,6 +129,12 @@ fn run_single_lint(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    let has_errors = combined.lines().any(|l| l.contains("error:"));
+    let has_warnings = combined
+        .lines()
+        .any(|l| l.contains("warning:") && !l.contains("warnings generated"));
 
     if !stdout.is_empty() {
         for line in stdout.lines() {
@@ -143,10 +149,19 @@ fn run_single_lint(
         }
     }
 
-    if !output.status.success() {
+    if has_errors {
         let verb = if fix { "Fix failed" } else { "Lint failed" };
         ctx.style.error(verb, pkg_name);
-        bail!("lint found issues");
+        bail!("lint found errors");
+    }
+
+    if has_warnings {
+        let verb = if fix { "Fixed" } else { "Checked" };
+        ctx.style.warn(
+            verb,
+            &format!("{pkg_name} ({} files, warnings emitted)", sources.len()),
+        );
+        return Ok(());
     }
 
     let verb = if fix { "Fixed" } else { "Checked" };

@@ -120,6 +120,9 @@ fn run_single_lint(
     if fix {
         cmd.arg("--fix").arg("--fix-errors");
     }
+    for arg in &lint_config.extra_args {
+        cmd.arg(arg);
+    }
     for src in &sources {
         cmd.arg(src);
     }

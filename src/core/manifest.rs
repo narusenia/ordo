@@ -49,6 +49,8 @@ pub struct FmtConfig {
 pub struct LintConfig {
     pub tool: Option<String>,
     pub config: Option<String>,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

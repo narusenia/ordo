@@ -158,7 +158,7 @@ fn try_detect(exe: &str, kind: CompilerKind) -> Option<DetectedCompiler> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let version = parse_version(&stdout).unwrap_or_else(|| "unknown".to_string());
 
-    let path = which(exe)?;
+    let path = which_exe(exe)?;
 
     Some(DetectedCompiler {
         kind,
@@ -182,13 +182,60 @@ fn try_detect_msvc(exe: &str) -> Option<DetectedCompiler> {
     }
 
     let version = parse_version(&stderr).unwrap_or_else(|| "unknown".to_string());
-    let path = which(exe)?;
+    let path = which_exe(exe)?;
 
     Some(DetectedCompiler {
         kind: CompilerKind::Msvc,
         path,
         version,
     })
+}
+
+/// Query the compiler's implicit system include paths by running
+/// `<exe> -E -x c++ -v /dev/null` and parsing the stderr output.
+/// Returns empty vec on failure or for MSVC (which uses different mechanisms).
+pub fn query_system_includes(compiler_exe: &str) -> Vec<PathBuf> {
+    let null_input = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let output = std::process::Command::new(compiler_exe)
+        .args(["-E", "-x", "c++", "-v", null_input])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok();
+
+    let Some(output) = output else {
+        return Vec::new();
+    };
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    parse_system_include_paths(&stderr)
+}
+
+fn parse_system_include_paths(stderr: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let mut in_search_list = false;
+
+    for line in stderr.lines() {
+        if line.contains("#include <...> search starts here:") {
+            in_search_list = true;
+            continue;
+        }
+        if line.contains("End of search list.") {
+            break;
+        }
+        if in_search_list {
+            let trimmed = line.trim();
+            // Skip framework directory entries
+            let path_str = trimmed
+                .strip_suffix(" (framework directory)")
+                .unwrap_or(trimmed);
+            if !path_str.is_empty() {
+                paths.push(PathBuf::from(path_str));
+            }
+        }
+    }
+
+    paths
 }
 
 fn parse_version(output: &str) -> Option<String> {
@@ -203,7 +250,7 @@ fn parse_version(output: &str) -> Option<String> {
     None
 }
 
-fn which(exe: &str) -> Option<PathBuf> {
+pub fn which_exe(exe: &str) -> Option<PathBuf> {
     #[cfg(windows)]
     let cmd = "where";
     #[cfg(not(windows))]
@@ -278,11 +325,58 @@ mod tests {
         let exe = "sh";
         #[cfg(windows)]
         let exe = "cmd";
-        assert!(which(exe).is_some());
+        assert!(which_exe(exe).is_some());
     }
 
     #[test]
     fn which_returns_none_for_nonexistent() {
-        assert!(which("__ordo_nonexistent_binary_12345__").is_none());
+        assert!(which_exe("__ordo_nonexistent_binary_12345__").is_none());
+    }
+
+    #[test]
+    fn parse_system_includes_clang() {
+        let stderr = r#"
+clang -cc1 version 18.1.8
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/lib/clang/18/include
+ /usr/include/c++/v1
+ /usr/include
+End of search list.
+"#;
+        let paths = parse_system_include_paths(stderr);
+        assert_eq!(paths.len(), 3);
+        assert_eq!(paths[0], PathBuf::from("/usr/lib/clang/18/include"));
+        assert_eq!(paths[1], PathBuf::from("/usr/include/c++/v1"));
+        assert_eq!(paths[2], PathBuf::from("/usr/include"));
+    }
+
+    #[test]
+    fn parse_system_includes_with_frameworks() {
+        let stderr = r#"
+#include <...> search starts here:
+ /usr/include/c++/v1
+ /usr/include
+ /System/Library/Frameworks (framework directory)
+End of search list.
+"#;
+        let paths = parse_system_include_paths(stderr);
+        assert_eq!(paths.len(), 3);
+        assert_eq!(paths[2], PathBuf::from("/System/Library/Frameworks"));
+    }
+
+    #[test]
+    fn parse_system_includes_empty() {
+        let paths = parse_system_include_paths("no search list here");
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn query_system_includes_returns_paths() {
+        let paths = query_system_includes("clang++");
+        // On any system with clang++ installed, we should get at least one path
+        if which_exe("clang++").is_some() {
+            assert!(!paths.is_empty());
+        }
     }
 }

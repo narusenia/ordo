@@ -1381,10 +1381,24 @@ fn clean_path(path: &str) -> String {
 }
 
 fn resolve_output_path(output_dir: &Path, name: &str, package_type: PackageType) -> PathBuf {
+    use crate::backend::compiler::{
+        executable_extension, shared_lib_extension, static_lib_extension, static_lib_prefix,
+    };
+
     match package_type {
-        PackageType::Executable => output_dir.join(name),
-        PackageType::StaticLibrary => output_dir.join(format!("lib{name}.a")),
-        PackageType::SharedLibrary => output_dir.join(format!("lib{name}.so")),
+        PackageType::Executable => {
+            output_dir.join(format!("{name}{}", executable_extension()))
+        }
+        PackageType::StaticLibrary => output_dir.join(format!(
+            "{}{name}{}",
+            static_lib_prefix(),
+            static_lib_extension()
+        )),
+        PackageType::SharedLibrary => output_dir.join(format!(
+            "{}{name}{}",
+            static_lib_prefix(),
+            shared_lib_extension()
+        )),
     }
 }
 

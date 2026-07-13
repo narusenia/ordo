@@ -30,11 +30,27 @@ pub struct Manifest {
     #[serde(default)]
     pub test: TestConfig,
     #[serde(default)]
+    pub build: BuildConfig,
+    #[serde(default)]
     pub fmt: FmtConfig,
     #[serde(default)]
     pub lint: LintConfig,
     #[serde(default)]
     pub scripts: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct BuildConfig {
+    pub engine: Option<BuildEngine>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BuildEngine {
+    #[default]
+    Ninja,
+    Faber,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

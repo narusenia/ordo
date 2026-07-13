@@ -16,7 +16,7 @@ use ordo_backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use ordo_backend::provider::{FetchedDep, Provider, ResolvedDep};
 use ordo_core::lockfile::LockFile;
 use ordo_core::manifest::{
-    CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
+    BuildEngine, CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
 use ordo_core::resolver::resolve_dependencies_with_features;
 use ordo_core::workspace::Workspace;
@@ -266,18 +266,45 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     )
     .build();
 
-    let build_ninja = NinjaGenerator::new(&graph, compiler.as_ref()).generate();
     let compile_commands = graph.compile_commands_json();
-
-    fs::write(build_dir.join("build.ninja"), &build_ninja).into_diagnostic()?;
     fs::write(
         project_root.join("compile_commands.json"),
         &compile_commands,
     )
     .into_diagnostic()?;
 
+    let engine = manifest.build.engine.unwrap_or_default();
     let start = Instant::now();
-    invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
+
+    match engine {
+        BuildEngine::Ninja => {
+            let build_ninja = NinjaGenerator::new(&graph, compiler.as_ref()).generate();
+            fs::write(build_dir.join("build.ninja"), &build_ninja).into_diagnostic()?;
+            invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
+        }
+        BuildEngine::Faber => {
+            let faber = ordo_faber::FaberEngine::new(ctx.jobs, None);
+            let result = faber.execute(&graph, ctx.verbose)?;
+            if !result.success {
+                let err_count = result.errors.len();
+                ui.style.error(
+                    "Build failed",
+                    &format!(
+                        "{err_count} error(s), {} compiled, {} skipped",
+                        result.compiled, result.skipped
+                    ),
+                );
+                bail!("build failed with {err_count} error(s)");
+            }
+            if result.compiled > 0 || result.skipped > 0 {
+                ui.style.success(
+                    "Compiled",
+                    &format!("{} file(s), {} skipped", result.compiled, result.skipped),
+                );
+            }
+        }
+    }
+
     let elapsed = start.elapsed();
 
     let output_path = resolve_output_path(

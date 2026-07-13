@@ -1,72 +1,32 @@
 #![allow(dead_code)]
 
 use crate::compiler::{CompileFlags, Compiler, LinkFlags};
-use ordo_core::manifest::PackageType;
-use serde::Serialize;
+use ordo_core::build_graph::{BuildGraph, BuildTask, LinkKind};
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
-/// Generates build.ninja and compile_commands.json.
+/// Generates build.ninja text from a `BuildGraph`.
 ///
 /// All paths in build.ninja are relative to `build_dir` because ninja runs
 /// with `-C build_dir`. The `project_root` is used to compute relative paths
 /// from build_dir back to source files and output directory.
 pub struct NinjaGenerator<'a> {
+    graph: &'a BuildGraph,
     compiler: &'a dyn Compiler,
-    sources: Vec<PathBuf>,
-    build_dir: PathBuf,
-    project_root: PathBuf,
-    output_name: String,
-    package_type: PackageType,
-    compile_flags: CompileFlags,
-    link_flags: LinkFlags,
-    system_include_dirs: Vec<PathBuf>,
-}
-
-#[derive(Debug)]
-pub struct NinjaOutput {
-    pub build_ninja: String,
-    pub compile_commands: String,
 }
 
 impl<'a> NinjaGenerator<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        compiler: &'a dyn Compiler,
-        sources: Vec<PathBuf>,
-        build_dir: PathBuf,
-        project_root: PathBuf,
-        output_name: String,
-        package_type: PackageType,
-        compile_flags: CompileFlags,
-        link_flags: LinkFlags,
-    ) -> Self {
-        let system_include_dirs = crate::compiler::query_system_includes(compiler.cpp_executable());
-        Self {
-            compiler,
-            sources,
-            build_dir,
-            project_root,
-            output_name,
-            package_type,
-            compile_flags,
-            link_flags,
-            system_include_dirs,
-        }
+    pub fn new(graph: &'a BuildGraph, compiler: &'a dyn Compiler) -> Self {
+        Self { graph, compiler }
     }
 
-    pub fn generate(&self) -> NinjaOutput {
-        let build_ninja = self.generate_ninja();
-        let compile_commands = self.generate_compile_commands();
-        NinjaOutput {
-            build_ninja,
-            compile_commands,
-        }
+    pub fn generate(&self) -> String {
+        self.generate_ninja()
     }
 
     fn rel(&self, path: &Path) -> PathBuf {
-        let abs_target = self.project_root.join(path);
-        pathdiff::diff_paths(&abs_target, &self.build_dir).unwrap_or(abs_target)
+        let abs_target = self.graph.project_root.join(path);
+        pathdiff::diff_paths(&abs_target, &self.graph.build_dir).unwrap_or(abs_target)
     }
 
     fn generate_ninja(&self) -> String {
@@ -79,6 +39,9 @@ impl<'a> NinjaGenerator<'a> {
 
         let c_exe = self.compiler.c_executable();
         let cpp_exe = self.compiler.cpp_executable();
+
+        // Determine link kind from graph
+        let link_kind = self.graph.link.kind;
 
         if msvc {
             writeln!(out, "rule cc").unwrap();
@@ -120,19 +83,21 @@ impl<'a> NinjaGenerator<'a> {
             writeln!(out).unwrap();
         }
 
+        let has_cpp = self.graph.tasks.iter().any(|t| t.is_cpp);
+
         if msvc {
-            match self.package_type {
-                PackageType::Executable => {
+            match link_kind {
+                LinkKind::Executable => {
                     writeln!(out, "rule link").unwrap();
                     writeln!(out, "  command = link.exe /nologo $flags $in /OUT:$out").unwrap();
                     writeln!(out, "  description = Linking $out").unwrap();
                 }
-                PackageType::StaticLibrary => {
+                LinkKind::StaticLibrary => {
                     writeln!(out, "rule ar").unwrap();
                     writeln!(out, "  command = lib.exe /nologo /OUT:$out $in").unwrap();
                     writeln!(out, "  description = Archiving $out").unwrap();
                 }
-                PackageType::SharedLibrary => {
+                LinkKind::SharedLibrary => {
                     writeln!(out, "rule link").unwrap();
                     writeln!(
                         out,
@@ -143,23 +108,19 @@ impl<'a> NinjaGenerator<'a> {
                 }
             }
         } else {
-            let link_exe = if self.has_cpp_sources() {
-                cpp_exe
-            } else {
-                c_exe
-            };
-            match self.package_type {
-                PackageType::Executable => {
+            let link_exe = if has_cpp { cpp_exe } else { c_exe };
+            match link_kind {
+                LinkKind::Executable => {
                     writeln!(out, "rule link").unwrap();
                     writeln!(out, "  command = {link_exe} $flags $in -o $out").unwrap();
                     writeln!(out, "  description = Linking $out").unwrap();
                 }
-                PackageType::StaticLibrary => {
+                LinkKind::StaticLibrary => {
                     writeln!(out, "rule ar").unwrap();
                     writeln!(out, "  command = ar rcs $out $in").unwrap();
                     writeln!(out, "  description = Archiving $out").unwrap();
                 }
-                PackageType::SharedLibrary => {
+                LinkKind::SharedLibrary => {
                     writeln!(out, "rule link").unwrap();
                     writeln!(out, "  command = {link_exe} -shared $flags $in -o $out").unwrap();
                     writeln!(out, "  description = Linking $out").unwrap();
@@ -168,18 +129,17 @@ impl<'a> NinjaGenerator<'a> {
         }
         writeln!(out).unwrap();
 
-        let obj_ext = if msvc { "obj" } else { "o" };
-
-        // Build statements — all paths relative to build_dir
+        // Build statements for compile tasks — extract ninja-level flags from the graph
         let mut objects = Vec::new();
-        for src in &self.sources {
-            let rel_src = self.rel(src);
-            let stem = src.file_stem().unwrap_or_default().to_string_lossy();
-            let obj = format!("{stem}.{obj_ext}");
+        for task in &self.graph.tasks {
+            let rel_src = self.rel(&task.source);
+            let obj = task.object.display().to_string();
+            let rule = if task.is_cpp { "cxx" } else { "cc" };
 
-            let cpp = is_cpp_source(src);
-            let compile_flags = self.compile_flags_str_for(cpp);
-            let rule = if cpp { "cxx" } else { "cc" };
+            // Extract compile flags for ninja from the BuildTask command.
+            // The ninja rule handles -c, -MD, -MF, -o, and the source file;
+            // we need everything else as $flags.
+            let compile_flags = self.extract_ninja_compile_flags(task);
 
             writeln!(out, "build {obj}: {rule} {}", rel_src.display()).unwrap();
             writeln!(out, "  flags = {compile_flags}").unwrap();
@@ -192,15 +152,15 @@ impl<'a> NinjaGenerator<'a> {
         let rel_output = self.rel_output();
         let objs_str = objects.join(" ");
 
-        match self.package_type {
-            PackageType::Executable | PackageType::SharedLibrary => {
-                let lflags = self.link_flags_str();
+        match link_kind {
+            LinkKind::Executable | LinkKind::SharedLibrary => {
+                let lflags = self.extract_ninja_link_flags();
                 writeln!(out, "build {}: link {objs_str}", rel_output.display()).unwrap();
                 if !lflags.is_empty() {
                     writeln!(out, "  flags = {lflags}").unwrap();
                 }
             }
-            PackageType::StaticLibrary => {
+            LinkKind::StaticLibrary => {
                 writeln!(out, "build {}: ar {objs_str}", rel_output.display()).unwrap();
             }
         }
@@ -211,216 +171,168 @@ impl<'a> NinjaGenerator<'a> {
         out
     }
 
-    fn compile_flags_str_for(&self, cpp: bool) -> String {
-        if self.compiler.is_msvc() {
-            return self.msvc_compile_flags_str_for(cpp);
-        }
+    /// Extract the compile flags portion for ninja's $flags variable.
+    ///
+    /// The ninja rule template handles the structural parts (compiler exe, -MD, -MF, -o, input).
+    /// The $flags variable gets everything else: -c, standards, optimization, warnings, defines, includes.
+    fn extract_ninja_compile_flags(&self, task: &BuildTask) -> String {
+        let msvc = self.compiler.is_msvc();
+        let cmd = &task.command;
 
-        let mut flags = vec!["-c".to_string()];
-
-        if cpp {
-            if let Some(std) = self.compile_flags.cpp_standard {
-                flags.push(format!("-std={}", std.as_flag()));
-            }
-        } else if let Some(std) = self.compile_flags.c_standard {
-            flags.push(format!("-std={}", std.as_flag()));
-        }
-
-        flags.push(format!("-O{}", self.compile_flags.opt_level.as_flag()));
-
-        if self.compile_flags.debug {
-            flags.push("-g".to_string());
-        }
-
-        for def in &self.compile_flags.defines {
-            flags.push(format!("-D{def}"));
-        }
-
-        for inc in &self.compile_flags.include_dirs {
-            let rel_inc = self.rel(inc);
-            flags.push(format!("-I{}", rel_inc.display()));
-        }
-
-        flags.join(" ")
-    }
-
-    fn msvc_compile_flags_str_for(&self, cpp: bool) -> String {
-        use ordo_core::manifest::{CppStandard, OptLevel, WarningLevel};
-
-        let mut flags = vec!["/c".to_string()];
-
-        if cpp && let Some(std) = self.compile_flags.cpp_standard {
-            let flag = match std {
-                CppStandard::Cpp17 => "/std:c++17",
-                CppStandard::Cpp20 => "/std:c++20",
-                CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
-            };
-            flags.push(flag.to_string());
-        }
-
-        match self.compile_flags.opt_level {
-            OptLevel::O0 => flags.push("/Od".to_string()),
-            OptLevel::O1 | OptLevel::Os | OptLevel::Oz => flags.push("/O1".to_string()),
-            OptLevel::O2 | OptLevel::O3 => flags.push("/O2".to_string()),
-        }
-
-        if self.compile_flags.debug {
-            flags.push("/Zi".to_string());
-        }
-
-        if !self.compile_flags.assertions {
-            flags.push("/DNDEBUG".to_string());
-        }
-
-        if cpp && self.compile_flags.cpp_standard.is_some() {
-            if !self.compile_flags.rtti {
-                flags.push("/GR-".to_string());
-            }
-            if self.compile_flags.exceptions {
-                flags.push("/EHsc".to_string());
-            }
-        }
-
-        match self.compile_flags.warnings {
-            WarningLevel::Default => flags.push("/W3".to_string()),
-            WarningLevel::All => flags.push("/W4".to_string()),
-            WarningLevel::Extra => flags.push("/Wall".to_string()),
-            WarningLevel::Error => {
-                flags.push("/W4".to_string());
-                flags.push("/WX".to_string());
-            }
-        }
-
-        for def in &self.compile_flags.defines {
-            flags.push(format!("/D{def}"));
-        }
-
-        for inc in &self.compile_flags.include_dirs {
-            let rel_inc = self.rel(inc);
-            flags.push(format!("/I{}", rel_inc.display()));
-        }
-
-        flags.join(" ")
-    }
-
-    fn link_flags_str(&self) -> String {
-        if self.compiler.is_msvc() {
-            return self.msvc_link_flags_str();
-        }
+        // Skip the compiler executable (first element)
+        let args = &cmd[1..];
 
         let mut flags = Vec::new();
-        if let Some(linker) = self.link_flags.linker {
-            flags.push(format!("-fuse-ld={linker}"));
+        let mut i = 0;
+        while i < args.len() {
+            let arg = &args[i];
+
+            if msvc {
+                // Skip MSVC structural args handled by ninja rule:
+                // /Fo<obj>, /showIncludes, and the source file (last arg)
+                if arg.starts_with("/Fo") || arg == "/showIncludes" {
+                    i += 1;
+                    continue;
+                }
+                // Skip -MD -MF <depfile> (shouldn't appear for MSVC, but be safe)
+                if arg == "-MD" || arg == "-MF" {
+                    i += 1;
+                    if arg == "-MF" && i < args.len() {
+                        i += 1; // skip depfile path
+                    }
+                    continue;
+                }
+            } else {
+                // Skip GCC/Clang structural args handled by ninja rule:
+                // -MD, -MF <depfile>, -o <obj>, and the source file
+                if arg == "-MD" {
+                    i += 1;
+                    continue;
+                }
+                if arg == "-MF" {
+                    i += 2; // skip -MF and the depfile path
+                    continue;
+                }
+                if arg == "-o" {
+                    i += 2; // skip -o and the obj path
+                    continue;
+                }
+            }
+
+            // Skip the source file (it's the last argument in compile_args output)
+            // We detect it by checking if it matches the task source path
+            let source_str = task.source.display().to_string();
+            let abs_source_str = self
+                .graph
+                .project_root
+                .join(&task.source)
+                .display()
+                .to_string();
+            if arg == &source_str || arg == &abs_source_str {
+                i += 1;
+                continue;
+            }
+
+            // Skip -isystem entries (these are for compile_commands.json, not for ninja)
+            if arg == "-isystem" {
+                i += 2; // skip -isystem and the path
+                continue;
+            }
+
+            // Relativize include paths that reference the project
+            if let Some(inc_path) = arg.strip_prefix("-I") {
+                let rel_inc = self.relativize_include(inc_path);
+                flags.push(format!("-I{}", rel_inc));
+                i += 1;
+                continue;
+            }
+            if let Some(inc_path) = arg.strip_prefix("/I") {
+                let rel_inc = self.relativize_include(inc_path);
+                flags.push(format!("/I{}", rel_inc));
+                i += 1;
+                continue;
+            }
+
+            flags.push(arg.clone());
+            i += 1;
         }
-        for dir in &self.link_flags.lib_dirs {
-            flags.push(format!("-L{}", dir.display()));
-        }
-        for lib in &self.link_flags.libs {
-            flags.push(format!("-l{lib}"));
-        }
-        for fw in &self.link_flags.frameworks {
-            flags.push("-framework".to_string());
-            flags.push(fw.clone());
-        }
+
         flags.join(" ")
     }
 
-    fn msvc_link_flags_str(&self) -> String {
-        use ordo_core::manifest::LtoMode;
-
-        let mut flags = Vec::new();
-        match self.link_flags.lto {
-            LtoMode::Off => {}
-            LtoMode::Thin | LtoMode::Full => flags.push("/LTCG".to_string()),
-        }
-        if self.link_flags.strip {
-            flags.push("/DEBUG:NONE".to_string());
-        }
-        for dir in &self.link_flags.lib_dirs {
-            flags.push(format!("/LIBPATH:{}", dir.display()));
-        }
-        for lib in &self.link_flags.libs {
-            flags.push(format!("{lib}.lib"));
-        }
-        flags.join(" ")
-    }
-
-    fn compile_flags_for(&self, cpp: bool) -> CompileFlags {
-        let mut flags = self.compile_flags.clone();
-        if cpp {
-            flags.c_standard = None;
+    /// Relativize an include path for ninja output.
+    fn relativize_include(&self, inc_path: &str) -> String {
+        let inc = PathBuf::from(inc_path);
+        // If the path is absolute or relative to project_root, relativize it to build_dir
+        if inc.is_absolute() {
+            pathdiff::diff_paths(&inc, &self.graph.build_dir)
+                .unwrap_or(inc)
+                .display()
+                .to_string()
         } else {
-            flags.cpp_standard = None;
+            // It's relative to project_root, so resolve and re-relativize
+            let abs = self.graph.project_root.join(&inc);
+            pathdiff::diff_paths(&abs, &self.graph.build_dir)
+                .unwrap_or(inc)
+                .display()
+                .to_string()
         }
-        flags
     }
 
-    fn has_cpp_sources(&self) -> bool {
-        self.sources.iter().any(|s| is_cpp_source(s))
+    /// Extract the link flags for ninja's $flags variable from the link command.
+    fn extract_ninja_link_flags(&self) -> String {
+        let cmd = &self.graph.link.command;
+        let msvc = self.compiler.is_msvc();
+
+        // Skip the linker executable (first element)
+        let args = &cmd[1..];
+
+        let mut flags = Vec::new();
+        let mut i = 0;
+        while i < args.len() {
+            let arg = &args[i];
+
+            if msvc {
+                // Skip /nologo, /DLL (handled by ninja rule), /OUT:<path>, and input objects
+                if arg == "/nologo" || arg == "/DLL" {
+                    i += 1;
+                    continue;
+                }
+                if arg.starts_with("/OUT:") {
+                    i += 1;
+                    continue;
+                }
+                // Skip object file inputs
+                if arg.ends_with(".obj") {
+                    i += 1;
+                    continue;
+                }
+            } else {
+                // Skip -o <output>, input objects, -shared (handled by ninja rule)
+                if arg == "-o" {
+                    i += 2; // skip -o and the output path
+                    continue;
+                }
+                if arg == "-shared" {
+                    i += 1;
+                    continue;
+                }
+                // Skip object file inputs
+                if arg.ends_with(".o") {
+                    i += 1;
+                    continue;
+                }
+            }
+
+            flags.push(arg.clone());
+            i += 1;
+        }
+
+        flags.join(" ")
     }
 
     fn rel_output(&self) -> PathBuf {
-        use crate::compiler::{
-            executable_extension, shared_lib_extension, static_lib_extension, static_lib_prefix,
-        };
-
-        let output_dir = self.build_dir.parent().unwrap_or(Path::new("."));
-        let output = match self.package_type {
-            PackageType::Executable => {
-                output_dir.join(format!("{}{}", self.output_name, executable_extension()))
-            }
-            PackageType::StaticLibrary => output_dir.join(format!(
-                "{}{}{}",
-                static_lib_prefix(),
-                self.output_name,
-                static_lib_extension()
-            )),
-            PackageType::SharedLibrary => output_dir.join(format!(
-                "{}{}{}",
-                static_lib_prefix(),
-                self.output_name,
-                shared_lib_extension()
-            )),
-        };
-        self.rel(&output)
-    }
-
-    fn generate_compile_commands(&self) -> String {
-        let project_root = &self.project_root;
-        let entries: Vec<CompileCommandEntry> = self
-            .sources
-            .iter()
-            .map(|src| {
-                let abs_src = project_root.join(src);
-                let obj = PathBuf::from(format!(
-                    "{}.o",
-                    src.file_stem().unwrap_or_default().to_string_lossy()
-                ));
-                let depfile = obj.with_extension("d");
-                let cpp = is_cpp_source(src);
-                let flags = self.compile_flags_for(cpp);
-                let args = self.compiler.compile_args(&abs_src, &obj, &depfile, &flags);
-                let exe = if cpp {
-                    self.compiler.cpp_executable()
-                } else {
-                    self.compiler.c_executable()
-                };
-                let mut command = vec![exe.to_string()];
-                command.extend(args);
-                for sys_inc in &self.system_include_dirs {
-                    command.push("-isystem".to_string());
-                    command.push(sys_inc.display().to_string());
-                }
-
-                CompileCommandEntry {
-                    directory: project_root.display().to_string(),
-                    file: src.display().to_string(),
-                    arguments: command,
-                }
-            })
-            .collect();
-
-        serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string())
+        self.rel(&self.graph.link.output)
     }
 }
 
@@ -429,13 +341,6 @@ fn is_cpp_source(path: &Path) -> bool {
         path.extension().and_then(|e| e.to_str()),
         Some("cpp" | "cc" | "cxx" | "C")
     )
-}
-
-#[derive(Serialize)]
-struct CompileCommandEntry {
-    directory: String,
-    file: String,
-    arguments: Vec<String>,
 }
 
 pub struct TestBinarySpec {
@@ -805,12 +710,14 @@ impl<'a> TestNinjaGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::build_graph_builder::BuildGraphBuilder;
     use crate::compiler::clang::ClangCompiler;
+    use ordo_core::manifest::PackageType;
 
-    fn basic_generator(package_type: PackageType) -> NinjaOutput {
+    fn basic_graph_and_ninja(package_type: PackageType) -> (BuildGraph, String) {
         let compiler = ClangCompiler;
         let sources = vec![PathBuf::from("src/main.cpp")];
-        let generator = NinjaGenerator::new(
+        let graph = BuildGraphBuilder::new(
             &compiler,
             sources,
             PathBuf::from("target/debug/build"),
@@ -819,57 +726,59 @@ mod tests {
             package_type,
             CompileFlags::default(),
             LinkFlags::default(),
-        );
-        generator.generate()
+        )
+        .build();
+        let ninja_text = NinjaGenerator::new(&graph, &compiler).generate();
+        (graph, ninja_text)
     }
 
     #[test]
     fn ninja_has_required_version() {
-        let output = basic_generator(PackageType::Executable);
-        assert!(output.build_ninja.contains("ninja_required_version"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::Executable);
+        assert!(ninja.contains("ninja_required_version"));
     }
 
     #[test]
     fn ninja_has_compile_rule() {
-        let output = basic_generator(PackageType::Executable);
-        assert!(output.build_ninja.contains("rule cc"));
-        assert!(output.build_ninja.contains("depfile"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::Executable);
+        assert!(ninja.contains("rule cc"));
+        assert!(ninja.contains("depfile"));
     }
 
     #[test]
     fn ninja_executable_has_link_rule() {
-        let output = basic_generator(PackageType::Executable);
-        assert!(output.build_ninja.contains("rule link"));
-        assert!(output.build_ninja.contains("myapp"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::Executable);
+        assert!(ninja.contains("rule link"));
+        assert!(ninja.contains("myapp"));
     }
 
     #[test]
     fn ninja_static_library_has_ar_rule() {
-        let output = basic_generator(PackageType::StaticLibrary);
-        assert!(output.build_ninja.contains("rule ar"));
-        assert!(output.build_ninja.contains("libmyapp.a"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::StaticLibrary);
+        assert!(ninja.contains("rule ar"));
+        assert!(ninja.contains("libmyapp.a"));
     }
 
     #[test]
     fn ninja_shared_library_has_shared_flag() {
-        let output = basic_generator(PackageType::SharedLibrary);
-        assert!(output.build_ninja.contains("-shared"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::SharedLibrary);
+        assert!(ninja.contains("-shared"));
         let ext = crate::compiler::shared_lib_extension();
-        assert!(output.build_ninja.contains(&format!("libmyapp{ext}")));
+        assert!(ninja.contains(&format!("libmyapp{ext}")));
     }
 
     #[test]
     fn ninja_has_default_target() {
-        let output = basic_generator(PackageType::Executable);
-        assert!(output.build_ninja.contains("default"));
-        assert!(output.build_ninja.contains("myapp"));
+        let (_, ninja) = basic_graph_and_ninja(PackageType::Executable);
+        assert!(ninja.contains("default"));
+        assert!(ninja.contains("myapp"));
     }
 
     #[test]
     fn ninja_multiple_sources() {
         let compiler = ClangCompiler;
         let sources = vec![PathBuf::from("src/main.cpp"), PathBuf::from("src/util.cpp")];
-        let generator = NinjaGenerator::new(
+        let graph = BuildGraphBuilder::new(
             &compiler,
             sources,
             PathBuf::from("target/debug/build"),
@@ -878,18 +787,19 @@ mod tests {
             PackageType::Executable,
             CompileFlags::default(),
             LinkFlags::default(),
-        );
-        let output = generator.generate();
+        )
+        .build();
+        let ninja = NinjaGenerator::new(&graph, &compiler).generate();
 
-        assert!(output.build_ninja.contains("build main.o: cxx"));
-        assert!(output.build_ninja.contains("build util.o: cxx"));
+        assert!(ninja.contains("build main.o: cxx"));
+        assert!(ninja.contains("build util.o: cxx"));
     }
 
     #[test]
     fn compile_commands_is_valid_json() {
-        let output = basic_generator(PackageType::Executable);
-        let parsed: Vec<serde_json::Value> =
-            serde_json::from_str(&output.compile_commands).unwrap();
+        let (graph, _) = basic_graph_and_ninja(PackageType::Executable);
+        let cc_json = graph.compile_commands_json();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&cc_json).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0]["file"], "src/main.cpp");
         assert!(parsed[0]["arguments"].as_array().unwrap().len() > 1);
@@ -899,7 +809,7 @@ mod tests {
     fn compile_commands_multiple_sources() {
         let compiler = ClangCompiler;
         let sources = vec![PathBuf::from("src/main.cpp"), PathBuf::from("src/util.cpp")];
-        let generator = NinjaGenerator::new(
+        let graph = BuildGraphBuilder::new(
             &compiler,
             sources,
             PathBuf::from("target/debug/build"),
@@ -908,19 +818,19 @@ mod tests {
             PackageType::Executable,
             CompileFlags::default(),
             LinkFlags::default(),
-        );
-        let output = generator.generate();
+        )
+        .build();
 
-        let parsed: Vec<serde_json::Value> =
-            serde_json::from_str(&output.compile_commands).unwrap();
+        let cc_json = graph.compile_commands_json();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&cc_json).unwrap();
         assert_eq!(parsed.len(), 2);
     }
 
     #[test]
     fn compile_commands_includes_system_paths() {
-        let output = basic_generator(PackageType::Executable);
-        let parsed: Vec<serde_json::Value> =
-            serde_json::from_str(&output.compile_commands).unwrap();
+        let (graph, _) = basic_graph_and_ninja(PackageType::Executable);
+        let cc_json = graph.compile_commands_json();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&cc_json).unwrap();
         let args = parsed[0]["arguments"].as_array().unwrap();
         let has_isystem = args.iter().any(|a| a.as_str() == Some("-isystem"));
         // On any system with clang++ we should have system includes

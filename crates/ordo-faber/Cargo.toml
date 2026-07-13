@@ -7,6 +7,10 @@ license.workspace = true
 description = "Built-in parallel build engine for Ordo"
 
 [dependencies]
-miette.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
+ordo-core = { workspace = true }
+miette = { workspace = true }
+indicatif = "0.17"
+console = "0.15"
+
+[dev-dependencies]
+tempfile = { workspace = true }

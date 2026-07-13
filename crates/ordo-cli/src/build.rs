@@ -1,5 +1,6 @@
 use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
+use ordo_backend::build_graph_builder::BuildGraphBuilder;
 use ordo_backend::compiler::{self, CompileFlags, LinkFlags};
 use ordo_backend::ninja::NinjaGenerator;
 use ordo_backend::provider::brew::BrewProvider;
@@ -15,7 +16,7 @@ use ordo_backend::provider::vcpkg::{VcpkgPackageSpec, VcpkgProvider};
 use ordo_backend::provider::{FetchedDep, Provider, ResolvedDep};
 use ordo_core::lockfile::LockFile;
 use ordo_core::manifest::{
-    CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
+    BuildEngine, CompilerKind, CppStandard, DependencySource, Manifest, PackageType, ProviderKind,
 };
 use ordo_core::resolver::resolve_dependencies_with_features;
 use ordo_core::workspace::Workspace;
@@ -253,7 +254,7 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
     let link_flags = build_link_flags(&manifest, ctx, &fetched_deps);
 
-    let ninja_gen = NinjaGenerator::new(
+    let graph = BuildGraphBuilder::new(
         compiler.as_ref(),
         sources,
         build_dir.clone(),
@@ -262,19 +263,81 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
         manifest.package().package_type,
         compile_flags,
         link_flags,
-    );
+    )
+    .build();
 
-    let output = ninja_gen.generate();
-
-    fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
+    let compile_commands = graph.compile_commands_json();
     fs::write(
         project_root.join("compile_commands.json"),
-        &output.compile_commands,
+        &compile_commands,
     )
     .into_diagnostic()?;
 
+    let engine = manifest.build.engine.unwrap_or_default();
     let start = Instant::now();
-    invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
+
+    match engine {
+        BuildEngine::Ninja => {
+            let build_ninja = NinjaGenerator::new(&graph, compiler.as_ref()).generate();
+            fs::write(build_dir.join("build.ninja"), &build_ninja).into_diagnostic()?;
+            invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
+        }
+        BuildEngine::Faber => {
+            use ordo_faber::FaberEvent;
+            ui.style.warn("Note", "Faber build engine is beta");
+            let faber = ordo_faber::FaberEngine::new(ctx.jobs, None);
+            let result = faber.execute(&graph, ctx.verbose, &|event| match event {
+                FaberEvent::Compiled {
+                    file,
+                    current,
+                    total,
+                } => {
+                    ui.style
+                        .success("Compiled", &format!("{file} [{current}/{total}]"));
+                }
+                FaberEvent::CompileFailed { file, stderr } => {
+                    ui.style.error("Failed", &file);
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+                FaberEvent::Linking { file } => {
+                    ui.style.success("Linking", &file);
+                }
+                FaberEvent::Linked { file } => {
+                    ui.style.success("Linked", &file);
+                }
+                FaberEvent::LinkFailed { stderr } => {
+                    ui.style.error("Failed", "linking");
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+            })?;
+            if !result.success {
+                let err_count = result.errors.len();
+                ui.style.error(
+                    "Build failed",
+                    &format!(
+                        "{err_count} error(s), {} compiled, {} skipped",
+                        result.compiled, result.skipped
+                    ),
+                );
+                bail!("build failed with {err_count} error(s)");
+            }
+            if result.compiled > 0 || result.skipped > 0 {
+                ui.style.success(
+                    "Compiled",
+                    &format!("{} file(s), {} skipped", result.compiled, result.skipped),
+                );
+            }
+        }
+    }
+
     let elapsed = start.elapsed();
 
     let output_path = resolve_output_path(

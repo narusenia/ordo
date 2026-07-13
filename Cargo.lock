@@ -797,6 +797,7 @@ dependencies = [
  "miette",
  "ordo-backend",
  "ordo-core",
+ "ordo-faber",
  "owo-colors",
  "pathdiff",
  "promptuity",
@@ -819,6 +820,7 @@ dependencies = [
  "pubgrub",
  "semver",
  "serde",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
@@ -831,9 +833,11 @@ dependencies = [
 name = "ordo-faber"
 version = "0.2.0"
 dependencies = [
+ "console",
+ "indicatif",
  "miette",
- "thiserror 2.0.18",
- "tracing",
+ "ordo-core",
+ "tempfile",
 ]
 
 [[package]]

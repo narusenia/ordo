@@ -57,9 +57,13 @@ impl OrdoPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn ordo_home_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let _guard = TempEnvVar::set("ORDO_HOME", "/tmp/ordo-test");
         let paths = OrdoPaths::resolve();
         assert_eq!(paths.config_dir, PathBuf::from("/tmp/ordo-test"));
@@ -72,6 +76,7 @@ mod tests {
 
     #[test]
     fn default_paths_are_under_ordo_subdir() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let _guard = TempEnvVar::remove("ORDO_HOME");
         let paths = OrdoPaths::resolve();
         assert!(paths.config_dir.ends_with("ordo"));
@@ -80,6 +85,7 @@ mod tests {
 
     #[test]
     fn subpaths_derive_from_base() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let _guard = TempEnvVar::set("ORDO_HOME", "/tmp/ordo-test");
         let paths = OrdoPaths::resolve();
         assert_eq!(
@@ -105,8 +111,7 @@ mod tests {
     impl TempEnvVar {
         fn set(key: &'static str, val: &str) -> Self {
             let prev = env::var(key).ok();
-            // SAFETY: tests run single-threaded via `cargo test -- --test-threads=1`
-            // or are isolated by unique env var names.
+            // SAFETY: all callers hold ENV_LOCK to prevent concurrent mutation.
             unsafe { env::set_var(key, val) };
             Self { key, prev }
         }

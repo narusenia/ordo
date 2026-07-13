@@ -397,7 +397,10 @@ fn build_dep_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     fn setup_project() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -698,6 +701,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_packages() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         run_multi(&tmp, &["zlib", "m", "pthread"], Some("system")).unwrap();
 
@@ -709,6 +713,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_with_inline_provider() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         run_multi(&tmp, &["system:zlib", "system:m"], None).unwrap();
 
@@ -719,6 +724,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_rejects_alias() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
         let specs = vec!["zlib".to_string(), "m".to_string()];
@@ -737,6 +743,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_rejects_link_name() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
         let specs = vec!["zlib".to_string(), "m".to_string()];
@@ -756,6 +763,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_partial_failure() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         let ctx = crate::cli::context::Context::default_for_test();
         // First add zlib so the second call hits a duplicate
@@ -774,6 +782,7 @@ type = "executable"
 
     #[test]
     fn add_multiple_no_provider_fails_gracefully() {
+        let _lock = CWD_LOCK.lock().unwrap();
         let tmp = setup_project();
         // Without -P and without inline provider, multi-add should fail per-package
         run_multi(&tmp, &["zlib", "m"], None).unwrap_err();

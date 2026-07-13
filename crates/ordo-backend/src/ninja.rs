@@ -41,8 +41,7 @@ impl<'a> NinjaGenerator<'a> {
         compile_flags: CompileFlags,
         link_flags: LinkFlags,
     ) -> Self {
-        let system_include_dirs =
-            crate::backend::compiler::query_system_includes(compiler.cpp_executable());
+        let system_include_dirs = crate::compiler::query_system_includes(compiler.cpp_executable());
         Self {
             compiler,
             sources,
@@ -925,7 +924,7 @@ mod tests {
         let args = parsed[0]["arguments"].as_array().unwrap();
         let has_isystem = args.iter().any(|a| a.as_str() == Some("-isystem"));
         // On any system with clang++ we should have system includes
-        if crate::backend::compiler::which_exe("clang++").is_some() {
+        if crate::compiler::which_exe("clang++").is_some() {
             assert!(
                 has_isystem,
                 "compile_commands.json should contain -isystem flags"

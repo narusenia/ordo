@@ -261,12 +261,12 @@ fn resolve_tool(configured: Option<&str>) -> Result<String> {
 }
 
 fn warn_toolchain_mismatch(lint_tool: &str, manifest: &Manifest, ctx: &Context) {
-    use crate::backend::compiler;
+    use ordo_backend::compiler;
 
     let compiler_kind = manifest.toolchain.compiler.unwrap_or_else(|| {
         compiler::detect_compiler()
             .map(|c| c.kind)
-            .unwrap_or(crate::core::manifest::CompilerKind::Clang)
+            .unwrap_or(ordo_core::manifest::CompilerKind::Clang)
     });
 
     let compiler_version = compiler::detect_specific(compiler_kind)

@@ -83,6 +83,31 @@ pub trait Compiler {
     ) -> Vec<String>;
     fn link_args(&self, objects: &[PathBuf], output: &Path, flags: &LinkFlags) -> Vec<String>;
     fn syntax_only_flag(&self) -> &str;
+    fn is_msvc(&self) -> bool {
+        false
+    }
+}
+
+pub fn executable_extension() -> &'static str {
+    if cfg!(windows) { ".exe" } else { "" }
+}
+
+pub fn static_lib_extension() -> &'static str {
+    if cfg!(windows) { ".lib" } else { ".a" }
+}
+
+pub fn static_lib_prefix() -> &'static str {
+    if cfg!(windows) { "" } else { "lib" }
+}
+
+pub fn shared_lib_extension() -> &'static str {
+    if cfg!(target_os = "macos") {
+        ".dylib"
+    } else if cfg!(windows) {
+        ".dll"
+    } else {
+        ".so"
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -124,6 +124,10 @@ impl Compiler for MsvcCompiler {
     fn syntax_only_flag(&self) -> &str {
         "/Zs"
     }
+
+    fn is_msvc(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

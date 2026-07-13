@@ -1,0 +1,25 @@
+[package]
+name = "ordo-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "CLI commands for Ordo"
+license.workspace = true
+
+[dependencies]
+ordo-core = { workspace = true }
+ordo-backend = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+clap = { workspace = true }
+console = "0.15"
+indicatif = "0.17"
+owo-colors = { version = "4", features = ["supports-colors"] }
+promptuity = "0.0.5"
+toml_edit = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+glob = { workspace = true }
+pathdiff = { workspace = true }

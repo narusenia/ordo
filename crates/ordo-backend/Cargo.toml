@@ -1,0 +1,20 @@
+[package]
+name = "ordo-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Build backend for Ordo (compiler, ninja, providers)"
+license.workspace = true
+
+[dependencies]
+ordo-core = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+pathdiff = { workspace = true }
+mlua = { version = "0.11.6", features = ["lua54", "serialize", "send", "vendored"] }
+sha2 = { workspace = true }
+glob = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "ordo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A modern project orchestrator for C and C++"
+license.workspace = true
+
+[dependencies]
+ordo-cli = { workspace = true }
+clap = { workspace = true }
+miette = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+owo-colors = { version = "4", features = ["supports-colors"] }

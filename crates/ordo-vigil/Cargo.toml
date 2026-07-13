@@ -1,0 +1,12 @@
+[package]
+name = "ordo-vigil"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Built-in C/C++ linter for Ordo"
+
+[dependencies]
+miette.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

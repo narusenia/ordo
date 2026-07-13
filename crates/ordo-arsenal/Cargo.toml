@@ -1,0 +1,12 @@
+[package]
+name = "ordo-arsenal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Toolchain manager for Ordo"
+
+[dependencies]
+miette.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

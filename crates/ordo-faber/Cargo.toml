@@ -1,0 +1,12 @@
+[package]
+name = "ordo-faber"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Built-in parallel build engine for Ordo"
+
+[dependencies]
+miette.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

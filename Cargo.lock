@@ -777,6 +777,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordo-arsenal"
+version = "0.2.0"
+dependencies = [
+ "miette",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-faber"
+version = "0.2.0"
+dependencies = [
+ "miette",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-forma"
+version = "0.2.0"
+dependencies = [
+ "miette",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-vigil"
+version = "0.2.0"
+dependencies = [
+ "miette",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "owo-colors"
 version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -754,25 +754,9 @@ name = "ordo"
 version = "0.2.0"
 dependencies = [
  "clap",
- "console",
- "dirs",
- "glob",
- "indicatif",
  "miette",
- "mlua",
+ "ordo-cli",
  "owo-colors",
- "pathdiff",
- "promptuity",
- "pubgrub",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.18",
- "toml",
- "toml_edit",
- "tracing",
  "tracing-subscriber",
 ]
 
@@ -782,6 +766,64 @@ version = "0.2.0"
 dependencies = [
  "miette",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-backend"
+version = "0.2.0"
+dependencies = [
+ "glob",
+ "miette",
+ "mlua",
+ "ordo-core",
+ "pathdiff",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-cli"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "console",
+ "glob",
+ "indicatif",
+ "miette",
+ "ordo-backend",
+ "ordo-core",
+ "owo-colors",
+ "pathdiff",
+ "promptuity",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml_edit",
+ "tracing",
+]
+
+[[package]]
+name = "ordo-core"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "dirs",
+ "glob",
+ "miette",
+ "pubgrub",
+ "semver",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "toml_edit",
  "tracing",
 ]
 

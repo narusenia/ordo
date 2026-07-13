@@ -1,0 +1,449 @@
+use super::context::Context;
+use miette::{IntoDiagnostic, Result, bail};
+use ordo_backend::compiler::{self, CompileFlags, Compiler};
+use ordo_core::manifest::{CompilerKind, CppStandard, Manifest, ResolvedFeatures};
+use ordo_core::workspace::Workspace;
+use std::fmt::Write as FmtWrite;
+use std::fs;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Instant;
+
+pub fn run(
+    release: bool,
+    profile: Option<&str>,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    package: Option<&str>,
+    ctx: &Context,
+) -> Result<()> {
+    let project_root = std::env::current_dir().into_diagnostic()?;
+    let manifest_path = project_root.join("Ordo.toml");
+    if !manifest_path.exists() {
+        bail!("Ordo.toml not found in {}", project_root.display());
+    }
+
+    let manifest = Manifest::load(&manifest_path)?;
+    let profile_name = resolve_profile_name(release, profile);
+
+    if manifest.is_workspace() {
+        return run_workspace_check(
+            &project_root,
+            &profile_name,
+            features,
+            no_default_features,
+            all_features,
+            package,
+            ctx,
+        );
+    }
+
+    run_single_check(
+        &project_root,
+        &manifest,
+        &profile_name,
+        features,
+        no_default_features,
+        all_features,
+        ctx,
+    )
+}
+
+fn run_workspace_check(
+    root_dir: &Path,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    package: Option<&str>,
+    ctx: &Context,
+) -> Result<()> {
+    let ws = Workspace::load(root_dir)?;
+
+    let members: Vec<String> = if let Some(target) = package {
+        if ws.find_member(target).is_none() {
+            let available = ws.member_names().join(", ");
+            bail!(
+                "package '{}' not found in workspace; available members: {}",
+                target,
+                available
+            );
+        }
+        vec![target.to_string()]
+    } else {
+        ws.member_names().into_iter().map(String::from).collect()
+    };
+
+    let mut total_fail = 0u32;
+    for name in &members {
+        let member = ws.find_member(name).unwrap();
+        let member_dir = root_dir.join(&member.dir);
+        let member_manifest = Manifest::load(&member_dir.join("Ordo.toml"))?;
+        if let Err(e) = run_single_check(
+            &member_dir,
+            &member_manifest,
+            profile_name,
+            features,
+            no_default_features,
+            all_features,
+            ctx,
+        ) {
+            ctx.style.error("Failed", &format!("{name}: {e}"));
+            total_fail += 1;
+        }
+    }
+
+    if total_fail > 0 {
+        bail!("check failed for {total_fail} member(s)");
+    }
+
+    Ok(())
+}
+
+fn run_single_check(
+    project_root: &Path,
+    manifest: &Manifest,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+    ctx: &Context,
+) -> Result<()> {
+    let pkg = manifest.package.as_ref().ok_or_else(|| {
+        miette::miette!(
+            "cannot check '{}': no [package] section",
+            project_root.display()
+        )
+    })?;
+
+    let compiler_kind = manifest
+        .toolchain
+        .compiler
+        .unwrap_or_else(auto_detect_compiler);
+    let compiler = compiler::create_compiler(compiler_kind);
+
+    let src_dir = project_root.join("src");
+    let sources = discover_sources(&src_dir)?;
+    if sources.is_empty() {
+        bail!("no source files found in {}", src_dir.display());
+    }
+
+    let canonical_root = fs::canonicalize(project_root).into_diagnostic()?;
+    let build_dir = project_root.join("target").join("check");
+    fs::create_dir_all(&build_dir).into_diagnostic()?;
+
+    let compile_flags = build_check_flags(
+        manifest,
+        project_root,
+        profile_name,
+        features,
+        no_default_features,
+        all_features,
+    );
+    let syntax_flag = compiler.syntax_only_flag();
+
+    let ninja_content = generate_check_ninja(
+        compiler.as_ref(),
+        &sources,
+        &build_dir,
+        &canonical_root,
+        &compile_flags,
+        syntax_flag,
+    );
+    fs::write(build_dir.join("build.ninja"), &ninja_content).into_diagnostic()?;
+
+    ctx.style.header(&format!("Checking {}", pkg.name));
+    let start = Instant::now();
+
+    let spinner = ctx
+        .style
+        .create_spinner(&format!("Checking {} files...", sources.len()));
+
+    let mut cmd = Command::new("ninja");
+    cmd.arg("-C").arg(&build_dir);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .into_diagnostic()
+        .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let stderr_handle = std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        reader.lines().map_while(Result::ok).collect::<Vec<_>>()
+    });
+
+    let reader = BufReader::new(stdout);
+    let mut output_lines = Vec::new();
+    for line in reader.lines() {
+        let line = line.into_diagnostic()?;
+        if !line.trim().is_empty() {
+            output_lines.push(line);
+        }
+    }
+
+    spinner.finish_and_clear();
+    let status = child.wait().into_diagnostic()?;
+    let stderr_lines = stderr_handle.join().unwrap_or_default();
+    let elapsed = start.elapsed();
+
+    if !status.success() {
+        for line in &output_lines {
+            eprintln!("  {line}");
+        }
+        for line in &stderr_lines {
+            eprintln!("  {line}");
+        }
+        ctx.style
+            .error("Check failed", &format!("in {:.2}s", elapsed.as_secs_f64()));
+        bail!("syntax check failed");
+    }
+
+    ctx.style.success(
+        "Checked",
+        &format!(
+            "{} ({} files in {:.2}s)",
+            pkg.name,
+            sources.len(),
+            elapsed.as_secs_f64()
+        ),
+    );
+    Ok(())
+}
+
+fn generate_check_ninja(
+    compiler: &dyn Compiler,
+    sources: &[PathBuf],
+    build_dir: &Path,
+    project_root: &Path,
+    flags: &CompileFlags,
+    syntax_flag: &str,
+) -> String {
+    let mut out = String::new();
+    let msvc = compiler.is_msvc();
+
+    writeln!(out, "# Generated by ordo (syntax check)").unwrap();
+    writeln!(out, "ninja_required_version = 1.3").unwrap();
+    writeln!(out).unwrap();
+
+    let c_exe = compiler.c_executable();
+    let cpp_exe = compiler.cpp_executable();
+
+    // Use a cross-platform stamp command
+    let stamp_cmd = if cfg!(windows) {
+        "cmd /c copy NUL $out >NUL"
+    } else {
+        "touch $out"
+    };
+
+    writeln!(out, "rule cc_check").unwrap();
+    writeln!(
+        out,
+        "  command = {c_exe} {syntax_flag} $flags $in && {stamp_cmd}"
+    )
+    .unwrap();
+    writeln!(out, "  description = Checking $in").unwrap();
+    writeln!(out).unwrap();
+
+    writeln!(out, "rule cxx_check").unwrap();
+    writeln!(
+        out,
+        "  command = {cpp_exe} {syntax_flag} $flags $in && {stamp_cmd}"
+    )
+    .unwrap();
+    writeln!(out, "  description = Checking $in").unwrap();
+    writeln!(out).unwrap();
+
+    let mut stamps = Vec::new();
+    for src in sources {
+        let abs_src = project_root.join(src);
+        let rel_src = pathdiff::diff_paths(&abs_src, build_dir).unwrap_or(abs_src);
+        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+        let stamp = format!("{stem}.checked");
+        let cpp = is_cpp_source(src);
+        let compile_flags = compile_flags_str(flags, build_dir, project_root, cpp, msvc);
+        let rule = if cpp { "cxx_check" } else { "cc_check" };
+
+        writeln!(out, "build {stamp}: {rule} {}", rel_src.display()).unwrap();
+        writeln!(out, "  flags = {compile_flags}").unwrap();
+        writeln!(out).unwrap();
+
+        stamps.push(stamp);
+    }
+
+    writeln!(out, "default {}", stamps.join(" ")).unwrap();
+    out
+}
+
+fn compile_flags_str(
+    flags: &CompileFlags,
+    build_dir: &Path,
+    project_root: &Path,
+    cpp: bool,
+    msvc: bool,
+) -> String {
+    if msvc {
+        return msvc_compile_flags_str(flags, build_dir, project_root, cpp);
+    }
+
+    let mut parts = vec!["-c".to_string()];
+
+    if cpp {
+        if let Some(std) = flags.cpp_standard {
+            parts.push(format!("-std={}", std.as_flag()));
+        }
+    } else if let Some(std) = flags.c_standard {
+        parts.push(format!("-std={}", std.as_flag()));
+    }
+
+    for def in &flags.defines {
+        parts.push(format!("-D{def}"));
+    }
+
+    for inc in &flags.include_dirs {
+        let abs = project_root.join(inc);
+        let rel = pathdiff::diff_paths(&abs, build_dir).unwrap_or(abs);
+        parts.push(format!("-I{}", rel.display()));
+    }
+
+    parts.join(" ")
+}
+
+fn msvc_compile_flags_str(
+    flags: &CompileFlags,
+    build_dir: &Path,
+    project_root: &Path,
+    cpp: bool,
+) -> String {
+    use ordo_core::manifest::CppStandard;
+
+    let mut parts = vec!["/c".to_string()];
+
+    if cpp && let Some(std) = flags.cpp_standard {
+        let flag = match std {
+            CppStandard::Cpp17 => "/std:c++17",
+            CppStandard::Cpp20 => "/std:c++20",
+            CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
+        };
+        parts.push(flag.to_string());
+    }
+
+    for def in &flags.defines {
+        parts.push(format!("/D{def}"));
+    }
+
+    for inc in &flags.include_dirs {
+        let abs = project_root.join(inc);
+        let rel = pathdiff::diff_paths(&abs, build_dir).unwrap_or(abs);
+        parts.push(format!("/I{}", rel.display()));
+    }
+
+    parts.join(" ")
+}
+
+fn build_check_flags(
+    manifest: &Manifest,
+    project_root: &Path,
+    profile_name: &str,
+    features: &[String],
+    no_default_features: bool,
+    all_features: bool,
+) -> CompileFlags {
+    let profile = manifest
+        .resolve_profile(profile_name)
+        .unwrap_or_else(|_| ordo_core::manifest::Profile::dev_defaults());
+
+    let has_cpp = manifest.language.cpp.is_some() || manifest.language.c.is_none();
+
+    let mut include_dirs = Vec::new();
+    let inc = project_root.join("include");
+    if inc.exists()
+        && let Ok(canonical) = fs::canonicalize(&inc)
+    {
+        include_dirs.push(canonical);
+    }
+
+    let defines = ResolvedFeatures::resolve(manifest, features, no_default_features, all_features)
+        .map(|r| r.defines)
+        .unwrap_or_default();
+
+    CompileFlags {
+        cpp_standard: if has_cpp {
+            manifest.language.cpp.or(Some(CppStandard::Cpp20))
+        } else {
+            None
+        },
+        c_standard: manifest.language.c,
+        opt_level: profile.opt_level,
+        debug: false,
+        assertions: false,
+        sanitize: Vec::new(),
+        pic: false,
+        rtti: true,
+        exceptions: true,
+        warnings: profile.warnings,
+        coverage: false,
+        split_debug: false,
+        defines,
+        include_dirs,
+    }
+}
+
+fn resolve_profile_name(release: bool, profile: Option<&str>) -> String {
+    if let Some(p) = profile {
+        p.to_string()
+    } else if release {
+        "release".to_string()
+    } else {
+        "debug".to_string()
+    }
+}
+
+fn auto_detect_compiler() -> CompilerKind {
+    compiler::detect_compiler()
+        .map(|c| c.kind)
+        .unwrap_or(CompilerKind::Clang)
+}
+
+fn discover_sources(src_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut sources = Vec::new();
+    if !src_dir.exists() {
+        return Ok(sources);
+    }
+    collect_sources(src_dir, &mut sources)?;
+    sources.sort();
+    Ok(sources)
+}
+
+fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).into_diagnostic()? {
+        let entry = entry.into_diagnostic()?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sources(&path, out)?;
+        } else if is_source_file(&path) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn is_source_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("cpp" | "cc" | "cxx" | "c")
+    )
+}
+
+fn is_cpp_source(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("cpp" | "cc" | "cxx" | "C")
+    )
+}

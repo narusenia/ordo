@@ -117,6 +117,10 @@ pub fn detect_specific(kind: CompilerKind) -> Option<DetectedCompiler> {
 }
 
 fn try_detect(exe: &str, kind: CompilerKind) -> Option<DetectedCompiler> {
+    if kind == CompilerKind::Msvc {
+        return try_detect_msvc(exe);
+    }
+
     let output = std::process::Command::new(exe)
         .arg("--version")
         .output()
@@ -138,6 +142,30 @@ fn try_detect(exe: &str, kind: CompilerKind) -> Option<DetectedCompiler> {
     })
 }
 
+fn try_detect_msvc(exe: &str) -> Option<DetectedCompiler> {
+    // cl.exe prints version info to stderr when run with no source file.
+    // It returns non-zero, but that's expected.
+    let output = std::process::Command::new(exe)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.contains("Microsoft") && !stderr.contains("cl") {
+        return None;
+    }
+
+    let version = parse_version(&stderr).unwrap_or_else(|| "unknown".to_string());
+    let path = which(exe)?;
+
+    Some(DetectedCompiler {
+        kind: CompilerKind::Msvc,
+        path,
+        version,
+    })
+}
+
 fn parse_version(output: &str) -> Option<String> {
     for word in output.split_whitespace() {
         // Strip trailing non-version chars, then take only digits and dots
@@ -151,10 +179,20 @@ fn parse_version(output: &str) -> Option<String> {
 }
 
 fn which(exe: &str) -> Option<PathBuf> {
-    let output = std::process::Command::new("which").arg(exe).output().ok()?;
+    #[cfg(windows)]
+    let cmd = "where";
+    #[cfg(not(windows))]
+    let cmd = "which";
+
+    let output = std::process::Command::new(cmd).arg(exe).output().ok()?;
 
     if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // `where` on Windows can return multiple lines; take the first
+        let path = stdout.lines().next()?.trim().to_string();
+        if path.is_empty() {
+            return None;
+        }
         Some(PathBuf::from(path))
     } else {
         None
@@ -200,5 +238,26 @@ mod tests {
 
         let c = create_compiler(CompilerKind::Msvc);
         assert_eq!(c.name(), "msvc");
+    }
+
+    #[test]
+    fn parse_version_msvc() {
+        let output = "Microsoft (R) C/C++ Optimizing Compiler Version 19.38.33133 for x64";
+        assert_eq!(parse_version(output), Some("19.38.33133".to_string()));
+    }
+
+    #[test]
+    fn which_finds_existing_binary() {
+        // `sh` exists on all Unix systems; `cmd` on Windows
+        #[cfg(not(windows))]
+        let exe = "sh";
+        #[cfg(windows)]
+        let exe = "cmd";
+        assert!(which(exe).is_some());
+    }
+
+    #[test]
+    fn which_returns_none_for_nonexistent() {
+        assert!(which("__ordo_nonexistent_binary_12345__").is_none());
     }
 }

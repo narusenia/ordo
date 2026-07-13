@@ -26,6 +26,27 @@ pub struct FaberError {
     pub exit_code: Option<i32>,
 }
 
+pub enum FaberEvent {
+    Compiled {
+        file: String,
+        current: u32,
+        total: u32,
+    },
+    CompileFailed {
+        file: String,
+        stderr: String,
+    },
+    Linking {
+        file: String,
+    },
+    Linked {
+        file: String,
+    },
+    LinkFailed {
+        stderr: String,
+    },
+}
+
 struct TaskResult {
     #[allow(dead_code)]
     index: usize,
@@ -46,13 +67,15 @@ impl FaberEngine {
         }
     }
 
-    pub fn execute(&self, graph: &BuildGraph, verbose: u8) -> miette::Result<FaberResult> {
-        eprintln!("  Using Faber build engine (beta)");
-
+    pub fn execute(
+        &self,
+        graph: &BuildGraph,
+        verbose: u8,
+        on_event: &dyn Fn(FaberEvent),
+    ) -> miette::Result<FaberResult> {
         fs::create_dir_all(&graph.build_dir)
             .map_err(|e| miette::miette!("failed to create build dir: {e}"))?;
 
-        // Determine which tasks need rebuilding
         let mut to_build: Vec<usize> = Vec::new();
         let mut skipped: usize = 0;
         for (i, task) in graph.tasks.iter().enumerate() {
@@ -64,13 +87,7 @@ impl FaberEngine {
         }
 
         if to_build.is_empty() {
-            // Check if link output exists
-            let link_output = if graph.link.output.is_relative() {
-                graph.build_dir.join(&graph.link.output)
-            } else {
-                graph.link.output.clone()
-            };
-
+            let link_output = resolve_path(&graph.link.output, &graph.build_dir);
             if link_output.exists() {
                 return Ok(FaberResult {
                     success: true,
@@ -79,14 +96,12 @@ impl FaberEngine {
                     errors: Vec::new(),
                 });
             }
-            // Need to link even though nothing compiled
         }
 
         let total_compile = to_build.len();
         let compiled = Arc::new(AtomicUsize::new(0));
         let error_count = Arc::new(AtomicUsize::new(0));
 
-        // Set up progress bar
         let pb = if total_compile > 0 {
             let pb = ProgressBar::new(total_compile as u64);
             pb.set_style(
@@ -104,12 +119,9 @@ impl FaberEngine {
         if total_compile > 0 {
             let worker_count = self.jobs.min(total_compile);
             let build_dir = graph.build_dir.clone();
-
             let (tx_result, rx_result) = mpsc::channel::<TaskResult>();
-
             let tasks_to_run: Vec<(usize, &BuildTask)> =
                 to_build.iter().map(|&i| (i, &graph.tasks[i])).collect();
-
             let work_index = Arc::new(AtomicUsize::new(0));
             let max_errors = self.max_errors;
             let error_count_clone = Arc::clone(&error_count);
@@ -150,17 +162,30 @@ impl FaberEngine {
                     });
                 }
 
-                // Drop sender in main thread so rx closes when all workers finish
                 drop(tx_result);
 
                 for result in &rx_result {
+                    let file = relative_to(&result.source, &graph.project_root);
+                    let current = compiled.load(Ordering::Relaxed) as u32 + 1;
+                    let total = total_compile as u32;
                     if result.ok {
                         compiled.fetch_add(1, Ordering::Relaxed);
-                        let source_display = clean_source_path(&result.source);
-                        pb.println(format!("  Compiled {source_display}"));
-                        pb.set_message(format!("Compiling {source_display}"));
+                        pb.suspend(|| {
+                            on_event(FaberEvent::Compiled {
+                                file: file.clone(),
+                                current,
+                                total,
+                            });
+                        });
+                        pb.set_message(format!("Compiling {file}"));
                         pb.inc(1);
                     } else {
+                        pb.suspend(|| {
+                            on_event(FaberEvent::CompileFailed {
+                                file,
+                                stderr: result.stderr.clone(),
+                            });
+                        });
                         pb.inc(1);
                         errors.push(FaberError {
                             source: result.source,
@@ -175,17 +200,6 @@ impl FaberEngine {
         pb.finish_and_clear();
 
         if !errors.is_empty() {
-            // Print error details
-            for err in &errors {
-                let source_display = clean_source_path(&err.source);
-                eprintln!("  error: failed to compile {source_display}");
-                if !err.stderr.is_empty() {
-                    for line in err.stderr.lines() {
-                        eprintln!("  {line}");
-                    }
-                }
-            }
-
             return Ok(FaberResult {
                 success: false,
                 compiled: compiled.load(Ordering::Relaxed),
@@ -194,27 +208,25 @@ impl FaberEngine {
             });
         }
 
-        // Execute link task if any compile ran, or if output doesn't exist
         let any_compiled = compiled.load(Ordering::Relaxed) > 0 || total_compile > 0;
-        let link_output = if graph.link.output.is_relative() {
-            graph.build_dir.join(&graph.link.output)
-        } else {
-            graph.link.output.clone()
-        };
+        let link_output = resolve_path(&graph.link.output, &graph.build_dir);
         let need_link = any_compiled || !link_output.exists();
 
         if need_link && !graph.link.command.is_empty() {
+            let output_display = relative_to(&graph.link.output, &graph.project_root);
+            on_event(FaberEvent::Linking {
+                file: output_display.clone(),
+            });
+
             if verbose > 0 {
                 eprintln!("  $ {}", graph.link.command.join(" "));
             }
+
             let link_result = execute_link_task(&graph.link.command, &graph.build_dir);
             if !link_result.ok {
-                eprintln!("  error: linking failed");
-                if !link_result.stderr.is_empty() {
-                    for line in link_result.stderr.lines() {
-                        eprintln!("  {line}");
-                    }
-                }
+                on_event(FaberEvent::LinkFailed {
+                    stderr: link_result.stderr.clone(),
+                });
                 return Ok(FaberResult {
                     success: false,
                     compiled: compiled.load(Ordering::Relaxed),
@@ -226,8 +238,9 @@ impl FaberEngine {
                     }],
                 });
             }
-            let output_display = clean_source_path(&graph.link.output);
-            eprintln!("  Linked {output_display}");
+            on_event(FaberEvent::Linked {
+                file: output_display,
+            });
         }
 
         Ok(FaberResult {
@@ -237,6 +250,21 @@ impl FaberEngine {
             errors: Vec::new(),
         })
     }
+}
+
+fn resolve_path(path: &Path, base: &Path) -> PathBuf {
+    if path.is_relative() {
+        base.join(path)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn relative_to(path: &Path, base: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 struct ExecResult {
@@ -313,18 +341,6 @@ fn execute_link_task(command: &[String], build_dir: &Path) -> ExecResult {
             exit_code: None,
         },
     }
-}
-
-fn clean_source_path(path: &Path) -> String {
-    let s = path.display().to_string();
-    let mut result = s.as_str();
-    while let Some(rest) = result.strip_prefix("../") {
-        result = rest;
-    }
-    if let Some(rest) = result.strip_prefix("./") {
-        result = rest;
-    }
-    result.to_string()
 }
 
 fn file_mtime(path: &Path) -> Option<SystemTime> {

@@ -283,8 +283,41 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
             invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
         }
         BuildEngine::Faber => {
+            use ordo_faber::FaberEvent;
+            ui.style.warn("Note", "Faber build engine is beta");
             let faber = ordo_faber::FaberEngine::new(ctx.jobs, None);
-            let result = faber.execute(&graph, ctx.verbose)?;
+            let result = faber.execute(&graph, ctx.verbose, &|event| match event {
+                FaberEvent::Compiled {
+                    file,
+                    current,
+                    total,
+                } => {
+                    ui.style
+                        .success("Compiled", &format!("{file} [{current}/{total}]"));
+                }
+                FaberEvent::CompileFailed { file, stderr } => {
+                    ui.style.error("Failed", &file);
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+                FaberEvent::Linking { file } => {
+                    ui.style.success("Linking", &file);
+                }
+                FaberEvent::Linked { file } => {
+                    ui.style.success("Linked", &file);
+                }
+                FaberEvent::LinkFailed { stderr } => {
+                    ui.style.error("Failed", "linking");
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+            })?;
             if !result.success {
                 let err_count = result.errors.len();
                 ui.style.error(

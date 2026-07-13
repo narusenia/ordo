@@ -1,5 +1,6 @@
 use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
+use ordo_backend::build_graph_builder::BuildGraphBuilder;
 use ordo_backend::compiler::{self, CompileFlags, LinkFlags};
 use ordo_backend::ninja::NinjaGenerator;
 use ordo_backend::provider::brew::BrewProvider;
@@ -253,7 +254,7 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     let compile_flags = build_compile_flags(&manifest, ctx, &fetched_deps);
     let link_flags = build_link_flags(&manifest, ctx, &fetched_deps);
 
-    let ninja_gen = NinjaGenerator::new(
+    let graph = BuildGraphBuilder::new(
         compiler.as_ref(),
         sources,
         build_dir.clone(),
@@ -262,14 +263,16 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
         manifest.package().package_type,
         compile_flags,
         link_flags,
-    );
+    )
+    .build();
 
-    let output = ninja_gen.generate();
+    let build_ninja = NinjaGenerator::new(&graph, compiler.as_ref()).generate();
+    let compile_commands = graph.compile_commands_json();
 
-    fs::write(build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
+    fs::write(build_dir.join("build.ninja"), &build_ninja).into_diagnostic()?;
     fs::write(
         project_root.join("compile_commands.json"),
-        &output.compile_commands,
+        &compile_commands,
     )
     .into_diagnostic()?;
 

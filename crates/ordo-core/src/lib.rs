@@ -1,3 +1,4 @@
+pub mod build_graph;
 pub mod config;
 pub mod error;
 pub mod lockfile;

@@ -926,7 +926,10 @@ mod tests {
         let has_isystem = args.iter().any(|a| a.as_str() == Some("-isystem"));
         // On any system with clang++ we should have system includes
         if crate::backend::compiler::which_exe("clang++").is_some() {
-            assert!(has_isystem, "compile_commands.json should contain -isystem flags");
+            assert!(
+                has_isystem,
+                "compile_commands.json should contain -isystem flags"
+            );
         }
     }
 }

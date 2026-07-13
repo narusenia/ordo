@@ -83,6 +83,8 @@ fn run_single_lint(
     let lint_config = &manifest.lint;
     let tool = resolve_tool(lint_config.tool.as_deref())?;
 
+    warn_toolchain_mismatch(&tool, manifest, ctx);
+
     let compile_db = project_root.join("compile_commands.json");
     if !compile_db.exists() {
         ctx.style.warn(
@@ -256,4 +258,57 @@ fn resolve_tool(configured: Option<&str>) -> Result<String> {
     }
 
     bail!("clang-tidy not found — install it or set [lint] tool in Ordo.toml")
+}
+
+fn warn_toolchain_mismatch(lint_tool: &str, manifest: &Manifest, ctx: &Context) {
+    use crate::backend::compiler;
+
+    let compiler_kind = manifest.toolchain.compiler.unwrap_or_else(|| {
+        compiler::detect_compiler()
+            .map(|c| c.kind)
+            .unwrap_or(crate::core::manifest::CompilerKind::Clang)
+    });
+
+    let compiler_version = compiler::detect_specific(compiler_kind)
+        .map(|c| c.version)
+        .unwrap_or_default();
+
+    let tidy_version = Command::new(lint_tool)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| {
+            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+            extract_version(&stdout)
+        })
+        .unwrap_or_default();
+
+    if compiler_version.is_empty() || tidy_version.is_empty() {
+        return;
+    }
+
+    let compiler_major = compiler_version.split('.').next().unwrap_or("");
+    let tidy_major = tidy_version.split('.').next().unwrap_or("");
+
+    if compiler_major != tidy_major {
+        ctx.style.warn(
+            "Warning",
+            &format!(
+                "compiler ({compiler_kind} {compiler_version}) and clang-tidy ({tidy_version}) \
+                 are from different toolchains — system include paths have been added to \
+                 compile_commands.json to compensate"
+            ),
+        );
+    }
+}
+
+fn extract_version(output: &str) -> Option<String> {
+    for word in output.split_whitespace() {
+        let candidate = word.split('-').next().unwrap_or(word);
+        let parts: Vec<&str> = candidate.split('.').collect();
+        if parts.len() >= 2 && parts.iter().all(|p| p.parse::<u32>().is_ok()) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
 }

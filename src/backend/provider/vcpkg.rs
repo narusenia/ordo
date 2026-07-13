@@ -307,12 +307,7 @@ fn parse_version_constraint(version: Option<&str>) -> (Option<String>, bool) {
 }
 
 fn normalize_vcpkg_version(v: &str) -> String {
-    let parts: Vec<&str> = v.split('.').collect();
-    match parts.len() {
-        1 => format!("{}.0.0", parts[0]),
-        2 => format!("{}.{}.0", parts[0], parts[1]),
-        _ => v.to_string(),
-    }
+    v.to_string()
 }
 
 fn build_vcpkg_manifest_multi(packages: &[VcpkgPackageSpec<'_>], baseline: Option<&str>) -> String {
@@ -530,7 +525,7 @@ mod tests {
         );
         assert!(manifest.contains("\"name\": \"spdlog\""));
         assert!(manifest.contains("\"overrides\""));
-        assert!(manifest.contains("\"version\": \"1.14.0\""));
+        assert!(manifest.contains("\"version\": \"1.14\""));
         assert!(!manifest.contains("version>="));
     }
 
@@ -543,7 +538,7 @@ mod tests {
             }],
             Some("abc123"),
         );
-        assert!(manifest.contains("\"version>=\": \"1.14.0\""));
+        assert!(manifest.contains("\"version>=\": \"1.14\""));
         assert!(!manifest.contains("\"overrides\""));
     }
 
@@ -565,7 +560,7 @@ mod tests {
         assert!(manifest.contains("\"name\": \"fmt\""));
         assert!(manifest.contains("\"name\": \"raylib\""));
         assert!(manifest.contains("\"overrides\""));
-        assert!(manifest.contains("\"version\": \"11.0.0\""));
+        assert!(manifest.contains("\"version\": \"11\""));
     }
 
     #[test]

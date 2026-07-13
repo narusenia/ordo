@@ -9,6 +9,12 @@ pub struct GitProvider {
     cache_dir_override: Option<PathBuf>,
 }
 
+impl Default for GitProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitProvider {
     pub fn new() -> Self {
         Self {
@@ -384,8 +390,10 @@ mod tests {
     use std::process::Output;
     use std::sync::{Arc, Mutex};
 
+    type CallLog = Arc<Mutex<Vec<(String, Vec<String>)>>>;
+
     struct MockRunner {
-        calls: Arc<Mutex<Vec<(String, Vec<String>)>>>,
+        calls: CallLog,
         responses: Arc<Mutex<HashMap<String, Output>>>,
     }
 

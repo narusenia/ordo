@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn find_native_paths_empty() {
         let tmp = TempDir::new().unwrap();
-        let (inc, lib, libs) = find_native_paths(&tmp.path().to_path_buf(), "openssl");
+        let (inc, lib, libs) = find_native_paths(tmp.path(), "openssl");
         assert!(inc.is_empty());
         assert!(lib.is_empty());
         assert_eq!(libs, vec!["openssl"]);
@@ -160,7 +160,7 @@ mod tests {
         std::fs::write(tmp.path().join("readme.txt"), "").unwrap();
 
         let mut libs = Vec::new();
-        scan_lib_names(&tmp.path().to_path_buf(), &mut libs);
+        scan_lib_names(tmp.path(), &mut libs);
         assert!(libs.contains(&"ssl".to_string()));
         assert!(libs.contains(&"crypto".to_string()));
         assert_eq!(libs.len(), 2);

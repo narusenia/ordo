@@ -102,7 +102,7 @@ mod tests {
         std::fs::write(tmp.path().join("bar.cpp"), "").unwrap();
         std::fs::write(tmp.path().join("baz.h"), "").unwrap();
 
-        let sources = find_source_files(&tmp.path().to_path_buf());
+        let sources = find_source_files(tmp.path());
         assert_eq!(sources.len(), 2);
     }
 

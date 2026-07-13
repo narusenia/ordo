@@ -8,6 +8,12 @@ pub struct VcpkgProvider {
     root_override: Option<PathBuf>,
 }
 
+impl Default for VcpkgProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VcpkgProvider {
     pub fn new() -> Self {
         Self {

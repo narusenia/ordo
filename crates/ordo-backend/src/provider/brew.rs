@@ -157,7 +157,7 @@ mod tests {
         std::fs::write(lib_dir.join("libcrypto.dylib"), "").unwrap();
         std::fs::write(lib_dir.join("libz.so"), "").unwrap();
 
-        let names = find_lib_names(&tmp.path().to_path_buf());
+        let names = find_lib_names(tmp.path());
         assert!(names.contains(&"ssl".to_string()));
         assert!(names.contains(&"crypto".to_string()));
         assert!(names.contains(&"z".to_string()));
@@ -169,7 +169,7 @@ mod tests {
         let lib_dir = tmp.path().join("lib");
         std::fs::create_dir(&lib_dir).unwrap();
 
-        let names = find_lib_names(&tmp.path().to_path_buf());
+        let names = find_lib_names(tmp.path());
         assert_eq!(names.len(), 1); // falls back to dir name
     }
 }

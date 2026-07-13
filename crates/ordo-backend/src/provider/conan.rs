@@ -7,6 +7,12 @@ pub struct ConanProvider {
     output_dir_override: Option<PathBuf>,
 }
 
+impl Default for ConanProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConanProvider {
     pub fn new() -> Self {
         Self {

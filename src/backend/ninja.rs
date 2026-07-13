@@ -20,6 +20,7 @@ pub struct NinjaGenerator<'a> {
     package_type: PackageType,
     compile_flags: CompileFlags,
     link_flags: LinkFlags,
+    system_include_dirs: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -40,6 +41,8 @@ impl<'a> NinjaGenerator<'a> {
         compile_flags: CompileFlags,
         link_flags: LinkFlags,
     ) -> Self {
+        let system_include_dirs =
+            crate::backend::compiler::query_system_includes(compiler.cpp_executable());
         Self {
             compiler,
             sources,
@@ -49,6 +52,7 @@ impl<'a> NinjaGenerator<'a> {
             package_type,
             compile_flags,
             link_flags,
+            system_include_dirs,
         }
     }
 
@@ -404,6 +408,10 @@ impl<'a> NinjaGenerator<'a> {
                 };
                 let mut command = vec![exe.to_string()];
                 command.extend(args);
+                for sys_inc in &self.system_include_dirs {
+                    command.push("-isystem".to_string());
+                    command.push(sys_inc.display().to_string());
+                }
 
                 CompileCommandEntry {
                     directory: project_root.display().to_string(),
@@ -907,5 +915,18 @@ mod tests {
         let parsed: Vec<serde_json::Value> =
             serde_json::from_str(&output.compile_commands).unwrap();
         assert_eq!(parsed.len(), 2);
+    }
+
+    #[test]
+    fn compile_commands_includes_system_paths() {
+        let output = basic_generator(PackageType::Executable);
+        let parsed: Vec<serde_json::Value> =
+            serde_json::from_str(&output.compile_commands).unwrap();
+        let args = parsed[0]["arguments"].as_array().unwrap();
+        let has_isystem = args.iter().any(|a| a.as_str() == Some("-isystem"));
+        // On any system with clang++ we should have system includes
+        if crate::backend::compiler::which_exe("clang++").is_some() {
+            assert!(has_isystem, "compile_commands.json should contain -isystem flags");
+        }
     }
 }

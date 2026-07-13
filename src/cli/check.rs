@@ -325,15 +325,13 @@ fn msvc_compile_flags_str(
 
     let mut parts = vec!["/c".to_string()];
 
-    if cpp {
-        if let Some(std) = flags.cpp_standard {
-            let flag = match std {
-                CppStandard::Cpp17 => "/std:c++17",
-                CppStandard::Cpp20 => "/std:c++20",
-                CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
-            };
-            parts.push(flag.to_string());
-        }
+    if cpp && let Some(std) = flags.cpp_standard {
+        let flag = match std {
+            CppStandard::Cpp17 => "/std:c++17",
+            CppStandard::Cpp20 => "/std:c++20",
+            CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
+        };
+        parts.push(flag.to_string());
     }
 
     for def in &flags.defines {

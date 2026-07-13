@@ -79,13 +79,21 @@ impl<'a> NinjaGenerator<'a> {
 
         if msvc {
             writeln!(out, "rule cc").unwrap();
-            writeln!(out, "  command = {c_exe} /nologo $flags /showIncludes /Fo$out $in").unwrap();
+            writeln!(
+                out,
+                "  command = {c_exe} /nologo $flags /showIncludes /Fo$out $in"
+            )
+            .unwrap();
             writeln!(out, "  deps = msvc").unwrap();
             writeln!(out, "  description = Compiling $in").unwrap();
             writeln!(out).unwrap();
 
             writeln!(out, "rule cxx").unwrap();
-            writeln!(out, "  command = {cpp_exe} /nologo $flags /showIncludes /Fo$out $in").unwrap();
+            writeln!(
+                out,
+                "  command = {cpp_exe} /nologo $flags /showIncludes /Fo$out $in"
+            )
+            .unwrap();
             writeln!(out, "  deps = msvc").unwrap();
             writeln!(out, "  description = Compiling $in").unwrap();
             writeln!(out).unwrap();
@@ -123,7 +131,11 @@ impl<'a> NinjaGenerator<'a> {
                 }
                 PackageType::SharedLibrary => {
                     writeln!(out, "rule link").unwrap();
-                    writeln!(out, "  command = link.exe /nologo /DLL $flags $in /OUT:$out").unwrap();
+                    writeln!(
+                        out,
+                        "  command = link.exe /nologo /DLL $flags $in /OUT:$out"
+                    )
+                    .unwrap();
                     writeln!(out, "  description = Linking $out").unwrap();
                 }
             }
@@ -234,15 +246,13 @@ impl<'a> NinjaGenerator<'a> {
 
         let mut flags = vec!["/c".to_string()];
 
-        if cpp {
-            if let Some(std) = self.compile_flags.cpp_standard {
-                let flag = match std {
-                    CppStandard::Cpp17 => "/std:c++17",
-                    CppStandard::Cpp20 => "/std:c++20",
-                    CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
-                };
-                flags.push(flag.to_string());
-            }
+        if cpp && let Some(std) = self.compile_flags.cpp_standard {
+            let flag = match std {
+                CppStandard::Cpp17 => "/std:c++17",
+                CppStandard::Cpp20 => "/std:c++20",
+                CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
+            };
+            flags.push(flag.to_string());
         }
 
         match self.compile_flags.opt_level {
@@ -520,15 +530,13 @@ impl<'a> TestNinjaGenerator<'a> {
 
         let mut flags = vec!["/c".to_string()];
 
-        if cpp {
-            if let Some(std) = self.compile_flags.cpp_standard {
-                let flag = match std {
-                    CppStandard::Cpp17 => "/std:c++17",
-                    CppStandard::Cpp20 => "/std:c++20",
-                    CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
-                };
-                flags.push(flag.to_string());
-            }
+        if cpp && let Some(std) = self.compile_flags.cpp_standard {
+            let flag = match std {
+                CppStandard::Cpp17 => "/std:c++17",
+                CppStandard::Cpp20 => "/std:c++20",
+                CppStandard::Cpp23 | CppStandard::Cpp26 => "/std:c++latest",
+            };
+            flags.push(flag.to_string());
         }
 
         match self.compile_flags.opt_level {
@@ -631,13 +639,21 @@ impl<'a> TestNinjaGenerator<'a> {
 
         if msvc {
             writeln!(out, "rule cc").unwrap();
-            writeln!(out, "  command = {c_exe} /nologo $flags /showIncludes /Fo$out $in").unwrap();
+            writeln!(
+                out,
+                "  command = {c_exe} /nologo $flags /showIncludes /Fo$out $in"
+            )
+            .unwrap();
             writeln!(out, "  deps = msvc").unwrap();
             writeln!(out, "  description = Compiling $in").unwrap();
             writeln!(out).unwrap();
 
             writeln!(out, "rule cxx").unwrap();
-            writeln!(out, "  command = {cpp_exe} /nologo $flags /showIncludes /Fo$out $in").unwrap();
+            writeln!(
+                out,
+                "  command = {cpp_exe} /nologo $flags /showIncludes /Fo$out $in"
+            )
+            .unwrap();
             writeln!(out, "  deps = msvc").unwrap();
             writeln!(out, "  description = Compiling $in").unwrap();
             writeln!(out).unwrap();

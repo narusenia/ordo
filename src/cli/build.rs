@@ -1386,9 +1386,7 @@ fn resolve_output_path(output_dir: &Path, name: &str, package_type: PackageType)
     };
 
     match package_type {
-        PackageType::Executable => {
-            output_dir.join(format!("{name}{}", executable_extension()))
-        }
+        PackageType::Executable => output_dir.join(format!("{name}{}", executable_extension())),
         PackageType::StaticLibrary => output_dir.join(format!(
             "{}{name}{}",
             static_lib_prefix(),

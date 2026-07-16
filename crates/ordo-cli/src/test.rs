@@ -1,6 +1,9 @@
 use super::build::{DEP_CACHE_FILE, load_dep_cache};
 use super::context::Context;
 use miette::{IntoDiagnostic, Result, bail};
+use ordo_backend::build_graph_builder::{
+    TestBinarySpec as BuildGraphTestSpec, TestBuildGraphBuilder,
+};
 use ordo_backend::compiler::{self, CompileFlags, LinkFlags};
 use ordo_backend::ninja::{TestBinarySpec, TestNinjaGenerator};
 use ordo_backend::provider::FetchedDep;
@@ -184,49 +187,126 @@ fn run_single_tests(
         PackageType::Executable => None,
     };
 
-    let test_specs: Vec<TestBinarySpec> = filtered
-        .iter()
-        .map(|t| {
-            let (fw_libs, fw_lib_dirs, fw_include_dirs) = framework_link_info(t.framework);
-            TestBinarySpec {
-                name: t.name.clone(),
-                test_source: t.source.clone(),
-                framework_libs: fw_libs,
-                framework_lib_dirs: fw_lib_dirs,
-                framework_include_dirs: fw_include_dirs,
-            }
-        })
-        .collect();
+    let canonical_root = fs::canonicalize(project_root).into_diagnostic()?;
+    let lib_sources = test_lib
+        .as_ref()
+        .map(|l| l.sources.clone())
+        .unwrap_or_default();
+    let lib_name_opt = test_lib.as_ref().map(|l| l.lib_name.clone());
 
-    let ninja_gen = TestNinjaGenerator::new(
-        compiler.as_ref(),
-        test_build_dir.clone(),
-        fs::canonicalize(project_root).into_diagnostic()?,
-        compile_flags,
-        link_flags,
-        test_lib
-            .as_ref()
-            .map(|l| l.sources.clone())
-            .unwrap_or_default(),
-        test_lib.as_ref().map(|l| l.lib_name.clone()),
-        project_lib_path,
-        test_specs,
-    );
-
-    let output = ninja_gen.generate();
-    fs::write(test_build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
+    let engine = manifest.build.engine.unwrap_or_default();
 
     ctx.style.header(&format!("Testing {}", pkg.name));
-
     let start = Instant::now();
-    invoke_ninja(&test_build_dir, opts.jobs, ctx)?;
 
-    let results = run_test_binaries(
-        &output.test_binaries,
-        opts.filter.as_deref(),
-        &filtered,
-        ctx,
-    )?;
+    let test_binaries: Vec<(String, PathBuf)> = match engine {
+        ordo_core::manifest::BuildEngine::Ninja => {
+            let test_specs: Vec<TestBinarySpec> = filtered
+                .iter()
+                .map(|t| {
+                    let (fw_libs, fw_lib_dirs, fw_include_dirs) = framework_link_info(t.framework);
+                    TestBinarySpec {
+                        name: t.name.clone(),
+                        test_source: t.source.clone(),
+                        framework_libs: fw_libs,
+                        framework_lib_dirs: fw_lib_dirs,
+                        framework_include_dirs: fw_include_dirs,
+                    }
+                })
+                .collect();
+
+            let ninja_gen = TestNinjaGenerator::new(
+                compiler.as_ref(),
+                test_build_dir.clone(),
+                canonical_root,
+                compile_flags,
+                link_flags,
+                lib_sources,
+                lib_name_opt,
+                project_lib_path,
+                test_specs,
+            );
+
+            let output = ninja_gen.generate();
+            fs::write(test_build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
+            invoke_ninja(&test_build_dir, opts.jobs, ctx)?;
+            output.test_binaries
+        }
+        ordo_core::manifest::BuildEngine::Faber => {
+            use ordo_faber::FaberEvent;
+
+            let test_specs: Vec<BuildGraphTestSpec> = filtered
+                .iter()
+                .map(|t| {
+                    let (fw_libs, fw_lib_dirs, fw_include_dirs) = framework_link_info(t.framework);
+                    BuildGraphTestSpec {
+                        name: t.name.clone(),
+                        test_source: t.source.clone(),
+                        framework_libs: fw_libs,
+                        framework_lib_dirs: fw_lib_dirs,
+                        framework_include_dirs: fw_include_dirs,
+                    }
+                })
+                .collect();
+
+            let test_output = TestBuildGraphBuilder::new(
+                compiler.as_ref(),
+                test_build_dir.clone(),
+                canonical_root,
+                compile_flags,
+                link_flags,
+                lib_sources,
+                lib_name_opt,
+                project_lib_path,
+                test_specs,
+            )
+            .build();
+
+            ctx.style.warn("Note", "Faber build engine is beta");
+            let faber = ordo_faber::FaberEngine::new(opts.jobs, None);
+            let result = faber.execute(&test_output.graph, opts.verbose, &|event| match event {
+                FaberEvent::Compiled {
+                    file,
+                    current,
+                    total,
+                } => {
+                    ctx.style
+                        .success("Compiled", &format!("{file} [{current}/{total}]"));
+                }
+                FaberEvent::CompileFailed { file, stderr } => {
+                    ctx.style.error("Failed", &file);
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+                FaberEvent::Linking { file } => {
+                    ctx.style.success("Linking", &file);
+                }
+                FaberEvent::Linked { file } => {
+                    ctx.style.success("Linked", &file);
+                }
+                FaberEvent::LinkFailed { stderr } => {
+                    ctx.style.error("Failed", "linking");
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+            })?;
+
+            if !result.success {
+                let err_count = result.errors.len();
+                bail!("test build failed with {err_count} error(s)");
+            }
+
+            test_output.test_binaries
+        }
+    };
+
+    let results = run_test_binaries(&test_binaries, opts.filter.as_deref(), &filtered, ctx)?;
     let elapsed = start.elapsed();
 
     let passed = results.iter().filter(|r| r.passed).count();

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct BuildGraph {
     pub tasks: Vec<BuildTask>,
-    pub link: LinkTask,
+    pub links: Vec<LinkTask>,
     pub project_root: PathBuf,
     pub build_dir: PathBuf,
 }

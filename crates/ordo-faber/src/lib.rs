@@ -1,3 +1,5 @@
+//! Faber — built-in parallel build engine for Ordo. **Beta**: enable with `[build] engine = "faber"` in Ordo.toml.
+
 use indicatif::{ProgressBar, ProgressStyle};
 use ordo_core::build_graph::{BuildGraph, BuildTask};
 use std::path::{Path, PathBuf};

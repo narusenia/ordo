@@ -1,3 +1,5 @@
+//! Arsenal — toolchain manager for Ordo. **Beta**: manages external tool binaries (Ninja).
+
 mod platform;
 mod registry;
 

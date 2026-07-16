@@ -325,7 +325,7 @@ pub enum Command {
         target: GenerateTarget,
     },
 
-    /// Manage toolchains
+    /// Manage toolchains (beta)
     Toolchain {
         #[command(subcommand)]
         command: ToolchainCommand,

@@ -154,6 +154,8 @@ fn run_single_tests(
     fs::create_dir_all(&test_build_dir).into_diagnostic()?;
     fs::create_dir_all(&profile_dir).into_diagnostic()?;
 
+    let _lock = crate::lock::BuildLock::acquire(&test_build_dir, ctx)?;
+
     let compiler_kind = manifest
         .toolchain
         .compiler

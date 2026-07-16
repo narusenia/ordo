@@ -134,6 +134,8 @@ fn run_single_check(
     let build_dir = project_root.join("target").join("check");
     fs::create_dir_all(&build_dir).into_diagnostic()?;
 
+    let _lock = crate::lock::BuildLock::acquire(&build_dir, ctx)?;
+
     let compile_flags = build_check_flags(
         manifest,
         project_root,

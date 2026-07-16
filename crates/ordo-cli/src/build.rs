@@ -238,6 +238,8 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
     fs::create_dir_all(&build_dir).into_diagnostic()?;
     fs::create_dir_all(&output_dir).into_diagnostic()?;
 
+    let _lock = crate::lock::BuildLock::acquire(&build_dir, ui)?;
+
     let compiler_kind = manifest
         .toolchain
         .compiler

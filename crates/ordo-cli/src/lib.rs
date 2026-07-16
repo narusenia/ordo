@@ -6,6 +6,7 @@ pub mod context;
 pub mod fmt;
 pub mod init;
 pub mod lint;
+pub mod lock;
 pub mod new;
 pub mod run;
 pub mod run_script;

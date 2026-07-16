@@ -87,8 +87,11 @@ impl FaberEngine {
         }
 
         if to_build.is_empty() {
-            let link_output = resolve_path(&graph.link.output, &graph.build_dir);
-            if link_output.exists() {
+            let all_outputs_exist = graph.links.iter().all(|link| {
+                let out = resolve_path(&link.output, &graph.build_dir);
+                out.exists()
+            });
+            if all_outputs_exist {
                 return Ok(FaberResult {
                     success: true,
                     compiled: 0,
@@ -209,38 +212,41 @@ impl FaberEngine {
         }
 
         let any_compiled = compiled.load(Ordering::Relaxed) > 0 || total_compile > 0;
-        let link_output = resolve_path(&graph.link.output, &graph.build_dir);
-        let need_link = any_compiled || !link_output.exists();
 
-        if need_link && !graph.link.command.is_empty() {
-            let output_display = relative_to(&graph.link.output, &graph.project_root);
-            on_event(FaberEvent::Linking {
-                file: output_display.clone(),
-            });
+        for link in &graph.links {
+            let link_output = resolve_path(&link.output, &graph.build_dir);
+            let need_link = any_compiled || !link_output.exists();
 
-            if verbose > 0 {
-                eprintln!("  $ {}", graph.link.command.join(" "));
-            }
-
-            let link_result = execute_link_task(&graph.link.command, &graph.build_dir);
-            if !link_result.ok {
-                on_event(FaberEvent::LinkFailed {
-                    stderr: link_result.stderr.clone(),
+            if need_link && !link.command.is_empty() {
+                let output_display = relative_to(&link.output, &graph.project_root);
+                on_event(FaberEvent::Linking {
+                    file: output_display.clone(),
                 });
-                return Ok(FaberResult {
-                    success: false,
-                    compiled: compiled.load(Ordering::Relaxed),
-                    skipped,
-                    errors: vec![FaberError {
-                        source: PathBuf::from("<link>"),
-                        stderr: link_result.stderr,
-                        exit_code: link_result.exit_code,
-                    }],
+
+                if verbose > 0 {
+                    eprintln!("  $ {}", link.command.join(" "));
+                }
+
+                let link_result = execute_link_task(&link.command, &graph.build_dir);
+                if !link_result.ok {
+                    on_event(FaberEvent::LinkFailed {
+                        stderr: link_result.stderr.clone(),
+                    });
+                    return Ok(FaberResult {
+                        success: false,
+                        compiled: compiled.load(Ordering::Relaxed),
+                        skipped,
+                        errors: vec![FaberError {
+                            source: PathBuf::from("<link>"),
+                            stderr: link_result.stderr,
+                            exit_code: link_result.exit_code,
+                        }],
+                    });
+                }
+                on_event(FaberEvent::Linked {
+                    file: output_display,
                 });
             }
-            on_event(FaberEvent::Linked {
-                file: output_display,
-            });
         }
 
         Ok(FaberResult {

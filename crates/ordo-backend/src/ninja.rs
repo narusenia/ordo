@@ -41,7 +41,7 @@ impl<'a> NinjaGenerator<'a> {
         let cpp_exe = self.compiler.cpp_executable();
 
         // Determine link kind from graph
-        let link_kind = self.graph.link.kind;
+        let link_kind = self.graph.links[0].kind;
 
         if msvc {
             writeln!(out, "rule cc").unwrap();
@@ -281,7 +281,7 @@ impl<'a> NinjaGenerator<'a> {
 
     /// Extract the link flags for ninja's $flags variable from the link command.
     fn extract_ninja_link_flags(&self) -> String {
-        let cmd = &self.graph.link.command;
+        let cmd = &self.graph.links[0].command;
         let msvc = self.compiler.is_msvc();
 
         // Skip the linker executable (first element)
@@ -332,7 +332,7 @@ impl<'a> NinjaGenerator<'a> {
     }
 
     fn rel_output(&self) -> PathBuf {
-        self.rel(&self.graph.link.output)
+        self.rel(&self.graph.links[0].output)
     }
 }
 

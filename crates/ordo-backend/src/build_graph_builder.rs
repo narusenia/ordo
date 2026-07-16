@@ -98,7 +98,7 @@ impl<'a> BuildGraphBuilder<'a> {
 
         BuildGraph {
             tasks,
-            link,
+            links: vec![link],
             project_root: self.project_root,
             build_dir: self.build_dir,
         }

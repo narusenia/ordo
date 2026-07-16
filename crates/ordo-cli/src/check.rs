@@ -167,7 +167,12 @@ fn run_single_check(
                 .style
                 .create_spinner(&format!("Checking {} files...", sources.len()));
 
-            let mut cmd = Command::new("ninja");
+            let ninja_bin = ordo_arsenal::resolve_tool_path(
+                ordo_arsenal::Tool::Ninja,
+                manifest.toolchain.ninja.as_deref(),
+            )
+            .unwrap_or_else(|| PathBuf::from("ninja"));
+            let mut cmd = Command::new(&ninja_bin);
             cmd.arg("-C").arg(&build_dir);
             cmd.stdout(Stdio::piped());
             cmd.stderr(Stdio::piped());

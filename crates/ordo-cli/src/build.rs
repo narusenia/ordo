@@ -282,7 +282,13 @@ fn build_project(ctx: &mut BuildContext, ui: &Context) -> Result<BuildResult> {
         BuildEngine::Ninja => {
             let build_ninja = NinjaGenerator::new(&graph, compiler.as_ref()).generate();
             fs::write(build_dir.join("build.ninja"), &build_ninja).into_diagnostic()?;
-            invoke_ninja(&build_dir, ctx.jobs, ctx.verbose, ui)?;
+            invoke_ninja(
+                &build_dir,
+                ctx.jobs,
+                ctx.verbose,
+                manifest.toolchain.ninja.as_deref(),
+                ui,
+            )?;
         }
         BuildEngine::Faber => {
             use ordo_faber::FaberEvent;
@@ -1291,10 +1297,22 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
-fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, _verbose: u8, ui: &Context) -> Result<()> {
+fn resolve_ninja_bin(version_req: Option<&str>) -> PathBuf {
+    ordo_arsenal::resolve_tool_path(ordo_arsenal::Tool::Ninja, version_req)
+        .unwrap_or_else(|| PathBuf::from("ninja"))
+}
+
+fn invoke_ninja(
+    build_dir: &Path,
+    jobs: Option<u32>,
+    _verbose: u8,
+    manifest_ninja_version: Option<&str>,
+    ui: &Context,
+) -> Result<()> {
     use crate::style::BuildStep;
 
-    let mut cmd = Command::new("ninja");
+    let ninja_bin = resolve_ninja_bin(manifest_ninja_version);
+    let mut cmd = Command::new(&ninja_bin);
     cmd.arg("-C").arg(build_dir);
 
     if let Some(j) = jobs {

@@ -144,67 +144,131 @@ fn run_single_check(
     );
     let syntax_flag = compiler.syntax_only_flag();
 
-    let ninja_content = generate_check_ninja(
-        compiler.as_ref(),
-        &sources,
-        &build_dir,
-        &canonical_root,
-        &compile_flags,
-        syntax_flag,
-    );
-    fs::write(build_dir.join("build.ninja"), &ninja_content).into_diagnostic()?;
-
     ctx.style.header(&format!("Checking {}", pkg.name));
     let start = Instant::now();
 
-    let spinner = ctx
-        .style
-        .create_spinner(&format!("Checking {} files...", sources.len()));
+    let engine = manifest.build.engine.unwrap_or_default();
 
-    let mut cmd = Command::new("ninja");
-    cmd.arg("-C").arg(&build_dir);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    match engine {
+        ordo_core::manifest::BuildEngine::Ninja => {
+            let ninja_content = generate_check_ninja(
+                compiler.as_ref(),
+                &sources,
+                &build_dir,
+                &canonical_root,
+                &compile_flags,
+                syntax_flag,
+            );
+            fs::write(build_dir.join("build.ninja"), &ninja_content).into_diagnostic()?;
 
-    let mut child = cmd
-        .spawn()
-        .into_diagnostic()
-        .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;
+            let spinner = ctx
+                .style
+                .create_spinner(&format!("Checking {} files...", sources.len()));
 
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+            let mut cmd = Command::new("ninja");
+            cmd.arg("-C").arg(&build_dir);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
 
-    let stderr_handle = std::thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        reader.lines().map_while(Result::ok).collect::<Vec<_>>()
-    });
+            let mut child = cmd
+                .spawn()
+                .into_diagnostic()
+                .map_err(|_| miette::miette!("failed to execute ninja — is it installed?"))?;
 
-    let reader = BufReader::new(stdout);
-    let mut output_lines = Vec::new();
-    for line in reader.lines() {
-        let line = line.into_diagnostic()?;
-        if !line.trim().is_empty() {
-            output_lines.push(line);
+            let stdout = child.stdout.take().unwrap();
+            let stderr = child.stderr.take().unwrap();
+
+            let stderr_handle = std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                reader.lines().map_while(Result::ok).collect::<Vec<_>>()
+            });
+
+            let reader = BufReader::new(stdout);
+            let mut output_lines = Vec::new();
+            for line in reader.lines() {
+                let line = line.into_diagnostic()?;
+                if !line.trim().is_empty() {
+                    output_lines.push(line);
+                }
+            }
+
+            spinner.finish_and_clear();
+            let status = child.wait().into_diagnostic()?;
+            let stderr_lines = stderr_handle.join().unwrap_or_default();
+
+            if !status.success() {
+                for line in &output_lines {
+                    eprintln!("  {line}");
+                }
+                for line in &stderr_lines {
+                    eprintln!("  {line}");
+                }
+                let elapsed = start.elapsed();
+                ctx.style
+                    .error("Check failed", &format!("in {:.2}s", elapsed.as_secs_f64()));
+                bail!("syntax check failed");
+            }
+        }
+        ordo_core::manifest::BuildEngine::Faber => {
+            use ordo_faber::FaberEvent;
+
+            ctx.style.warn("Note", "Faber build engine is beta");
+
+            let commands: Vec<(PathBuf, Vec<String>)> = sources
+                .iter()
+                .map(|src| {
+                    let abs_src = canonical_root.join(src);
+                    let cpp = is_cpp_source(src);
+                    let exe = if cpp {
+                        compiler.cpp_executable()
+                    } else {
+                        compiler.c_executable()
+                    };
+                    let flags = compile_flags_str(
+                        &compile_flags,
+                        &build_dir,
+                        &canonical_root,
+                        cpp,
+                        compiler.is_msvc(),
+                    );
+                    let mut cmd = vec![exe.to_string(), syntax_flag.to_string()];
+                    cmd.extend(flags.split_whitespace().map(String::from));
+                    cmd.push(abs_src.display().to_string());
+                    (src.clone(), cmd)
+                })
+                .collect();
+
+            let faber = ordo_faber::FaberEngine::new(None, None);
+            let result = faber.check(&commands, &canonical_root, &|event| match event {
+                FaberEvent::Compiled {
+                    file,
+                    current,
+                    total,
+                } => {
+                    ctx.style
+                        .success("Checked", &format!("{file} [{current}/{total}]"));
+                }
+                FaberEvent::CompileFailed { file, stderr } => {
+                    ctx.style.error("Failed", &file);
+                    if !stderr.is_empty() {
+                        for line in stderr.lines() {
+                            eprintln!("  {line}");
+                        }
+                    }
+                }
+                _ => {}
+            })?;
+
+            if !result.success {
+                let elapsed = start.elapsed();
+                ctx.style
+                    .error("Check failed", &format!("in {:.2}s", elapsed.as_secs_f64()));
+                bail!("syntax check failed");
+            }
         }
     }
 
-    spinner.finish_and_clear();
-    let status = child.wait().into_diagnostic()?;
-    let stderr_lines = stderr_handle.join().unwrap_or_default();
     let elapsed = start.elapsed();
-
-    if !status.success() {
-        for line in &output_lines {
-            eprintln!("  {line}");
-        }
-        for line in &stderr_lines {
-            eprintln!("  {line}");
-        }
-        ctx.style
-            .error("Check failed", &format!("in {:.2}s", elapsed.as_secs_f64()));
-        bail!("syntax check failed");
-    }
-
     ctx.style.success(
         "Checked",
         &format!(

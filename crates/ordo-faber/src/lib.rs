@@ -256,6 +256,133 @@ impl FaberEngine {
             errors: Vec::new(),
         })
     }
+
+    pub fn check(
+        &self,
+        commands: &[(PathBuf, Vec<String>)],
+        project_root: &Path,
+        on_event: &dyn Fn(FaberEvent),
+    ) -> miette::Result<FaberResult> {
+        let total = commands.len();
+        if total == 0 {
+            return Ok(FaberResult {
+                success: true,
+                compiled: 0,
+                skipped: 0,
+                errors: Vec::new(),
+            });
+        }
+
+        let checked = Arc::new(AtomicUsize::new(0));
+        let error_count = Arc::new(AtomicUsize::new(0));
+
+        let pb = ProgressBar::new(total as u64);
+        pb.set_style(
+            ProgressStyle::with_template("  [{bar:30.cyan/dim}] {pos}/{len} {msg}")
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("##-"),
+        );
+
+        let mut errors: Vec<FaberError> = Vec::new();
+        let worker_count = self.jobs.min(total);
+        let work_index = Arc::new(AtomicUsize::new(0));
+        let max_errors = self.max_errors;
+        let error_count_clone = Arc::clone(&error_count);
+
+        let (tx, rx) = mpsc::channel::<TaskResult>();
+
+        thread::scope(|s| {
+            for _ in 0..worker_count {
+                let tx = tx.clone();
+                let wi = Arc::clone(&work_index);
+                let ec = Arc::clone(&error_count_clone);
+
+                s.spawn(move || {
+                    loop {
+                        if ec.load(Ordering::Relaxed) >= max_errors && max_errors > 0 {
+                            break;
+                        }
+                        let idx = wi.fetch_add(1, Ordering::Relaxed);
+                        if idx >= commands.len() {
+                            break;
+                        }
+                        let (source, cmd) = &commands[idx];
+                        let result = if cmd.is_empty() {
+                            ExecResult {
+                                ok: false,
+                                stderr: "empty command".to_string(),
+                                exit_code: None,
+                            }
+                        } else {
+                            match Command::new(&cmd[0]).args(&cmd[1..]).output() {
+                                Ok(output) => ExecResult {
+                                    ok: output.status.success(),
+                                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                                    exit_code: output.status.code(),
+                                },
+                                Err(e) => ExecResult {
+                                    ok: false,
+                                    stderr: format!("failed to execute '{}': {e}", cmd[0]),
+                                    exit_code: None,
+                                },
+                            }
+                        };
+                        if !result.ok {
+                            ec.fetch_add(1, Ordering::Relaxed);
+                        }
+                        let _ = tx.send(TaskResult {
+                            index: idx,
+                            source: source.clone(),
+                            ok: result.ok,
+                            stderr: result.stderr,
+                            exit_code: result.exit_code,
+                        });
+                    }
+                });
+            }
+
+            drop(tx);
+
+            for result in &rx {
+                let file = relative_to(&result.source, project_root);
+                let current = checked.load(Ordering::Relaxed) as u32 + 1;
+                if result.ok {
+                    checked.fetch_add(1, Ordering::Relaxed);
+                    pb.suspend(|| {
+                        on_event(FaberEvent::Compiled {
+                            file: file.clone(),
+                            current,
+                            total: total as u32,
+                        });
+                    });
+                    pb.set_message(format!("Checking {file}"));
+                    pb.inc(1);
+                } else {
+                    pb.suspend(|| {
+                        on_event(FaberEvent::CompileFailed {
+                            file,
+                            stderr: result.stderr.clone(),
+                        });
+                    });
+                    pb.inc(1);
+                    errors.push(FaberError {
+                        source: result.source,
+                        stderr: result.stderr,
+                        exit_code: result.exit_code,
+                    });
+                }
+            }
+        });
+
+        pb.finish_and_clear();
+
+        Ok(FaberResult {
+            success: errors.is_empty(),
+            compiled: checked.load(Ordering::Relaxed),
+            skipped: 0,
+            errors,
+        })
+    }
 }
 
 fn resolve_path(path: &Path, base: &Path) -> PathBuf {

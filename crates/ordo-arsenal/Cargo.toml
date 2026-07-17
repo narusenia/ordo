@@ -4,9 +4,15 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Toolchain manager for Ordo"
+description = "Toolchain manager for Ordo (beta)"
 
 [dependencies]
+ordo-core = { workspace = true }
 miette.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+zip = "2"
+
+[dev-dependencies]
+tempfile = { workspace = true }

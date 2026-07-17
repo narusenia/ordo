@@ -12,6 +12,7 @@ pub mod run;
 pub mod run_script;
 pub mod style;
 pub mod test;
+pub mod toolchain;
 pub mod tree;
 pub mod update;
 
@@ -324,7 +325,7 @@ pub enum Command {
         target: GenerateTarget,
     },
 
-    /// Manage toolchains
+    /// Manage toolchains (beta)
     Toolchain {
         #[command(subcommand)]
         command: ToolchainCommand,
@@ -396,10 +397,35 @@ pub enum GenerateTarget {
 
 #[derive(Subcommand)]
 pub enum ToolchainCommand {
-    /// List available toolchains
+    /// Install a tool (e.g. "ninja")
+    Install {
+        /// Tool to install
+        tool: String,
+        /// Specific version
+        #[arg(long)]
+        version: Option<String>,
+    },
+    /// List installed tools
     List,
-    /// Install a toolchain
-    Install,
+    /// Remove a specific version of a tool
+    Remove {
+        /// Tool name
+        tool: String,
+        /// Version to remove
+        version: String,
+    },
+    /// Show path to a tool's binary
+    Which {
+        /// Tool name
+        tool: String,
+    },
+    /// Remove all installed tools
+    Clean,
+    /// Update a tool to the latest version
+    Update {
+        /// Tool to update, or all if omitted
+        tool: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

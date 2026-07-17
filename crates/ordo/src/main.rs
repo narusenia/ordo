@@ -175,8 +175,8 @@ fn main() -> Result<()> {
         Command::Generate { .. } => {
             eprintln!("ordo generate: not yet implemented");
         }
-        Command::Toolchain { .. } => {
-            eprintln!("ordo toolchain: not yet implemented");
+        Command::Toolchain { command } => {
+            ordo_cli::toolchain::run(&command, &ctx)?;
         }
         Command::Ci { .. } => {
             eprintln!("ordo ci: not yet implemented");

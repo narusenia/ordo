@@ -231,7 +231,12 @@ fn run_single_tests(
 
             let output = ninja_gen.generate();
             fs::write(test_build_dir.join("build.ninja"), &output.build_ninja).into_diagnostic()?;
-            invoke_ninja(&test_build_dir, opts.jobs, ctx)?;
+            invoke_ninja(
+                &test_build_dir,
+                opts.jobs,
+                manifest.toolchain.ninja.as_deref(),
+                ctx,
+            )?;
             output.test_binaries
         }
         ordo_core::manifest::BuildEngine::Faber => {
@@ -576,8 +581,19 @@ fn build_test_link_flags(
     }
 }
 
-fn invoke_ninja(build_dir: &Path, jobs: Option<u32>, ctx: &Context) -> Result<()> {
-    let mut cmd = Command::new("ninja");
+fn resolve_ninja_bin(version_req: Option<&str>) -> PathBuf {
+    ordo_arsenal::resolve_tool_path(ordo_arsenal::Tool::Ninja, version_req)
+        .unwrap_or_else(|| PathBuf::from("ninja"))
+}
+
+fn invoke_ninja(
+    build_dir: &Path,
+    jobs: Option<u32>,
+    manifest_ninja_version: Option<&str>,
+    ctx: &Context,
+) -> Result<()> {
+    let ninja_bin = resolve_ninja_bin(manifest_ninja_version);
+    let mut cmd = Command::new(&ninja_bin);
     cmd.arg("-C").arg(build_dir);
 
     if let Some(j) = jobs {

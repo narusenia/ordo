@@ -10,6 +10,7 @@ license.workspace = true
 ordo-core = { workspace = true }
 ordo-backend = { workspace = true }
 ordo-faber = { workspace = true }
+ordo-arsenal = { workspace = true }
 miette = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

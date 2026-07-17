@@ -214,6 +214,9 @@ pub struct CliConfig {
 pub struct Toolchain {
     pub compiler: Option<CompilerKind>,
     pub linker: Option<LinkerKind>,
+    pub ninja: Option<String>,
+    pub clang_format: Option<String>,
+    pub clang_tidy: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

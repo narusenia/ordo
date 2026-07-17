@@ -26,3 +26,4 @@ ordo-core = { path = "crates/ordo-core" }
 ordo-backend = { path = "crates/ordo-backend" }
 ordo-faber = { path = "crates/ordo-faber" }
 ordo-cli = { path = "crates/ordo-cli" }
+ordo-arsenal = { path = "crates/ordo-arsenal" }

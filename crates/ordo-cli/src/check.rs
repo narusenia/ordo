@@ -167,11 +167,15 @@ fn run_single_check(
                 .style
                 .create_spinner(&format!("Checking {} files...", sources.len()));
 
-            let ninja_bin = ordo_arsenal::resolve_tool_path(
+            let ninja_bin = match ordo_arsenal::resolve_tool_path(
                 ordo_arsenal::Tool::Ninja,
                 manifest.toolchain.ninja.as_deref(),
-            )
-            .unwrap_or_else(|| PathBuf::from("ninja"));
+            ) {
+                Some(path) => path,
+                None => {
+                    crate::build::auto_provision_ninja(manifest.toolchain.ninja.as_deref(), ctx)?
+                }
+            };
             let mut cmd = Command::new(&ninja_bin);
             cmd.arg("-C").arg(&build_dir);
             cmd.stdout(Stdio::piped());

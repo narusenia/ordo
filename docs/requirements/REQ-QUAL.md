@@ -14,7 +14,7 @@
   - [ ] Processes all C/C++ sources in `src/`, `include/`, `tests/`
   - [ ] Configurable via `[fmt] tool = "clang-format"`, `style = "<inline YAML>"`
   - [ ] Resolves clang-format from Arsenal, then `PATH`, then Xcode, and offers to install it when missing
-  - [ ] Honors a `[toolchain] clang-format` version pin against every candidate
+  - [ ] Honors a `[toolchain] clang-format` version pin against every resolved candidate; an explicit `[fmt] tool` overrides the pin
   - [ ] Returns non-zero exit code when `--check` finds differences
 
 ## REQ-QUAL-002: Lint Command

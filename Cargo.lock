@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "ordo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "miette",
@@ -1463,7 +1463,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-arsenal"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "miette",
  "ordo-core",
@@ -1476,7 +1476,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-backend"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "glob",
  "miette",
@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "console",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "dirs",
@@ -1538,7 +1538,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-faber"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "console",
  "indicatif",
@@ -1549,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-forma"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "miette",
  "thiserror 2.0.18",
@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "ordo-vigil"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "miette",
  "thiserror 2.0.18",

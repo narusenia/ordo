@@ -171,9 +171,7 @@ fn select_version(index: &PyPiIndex, version_req: Option<&str>) -> Result<String
     let mut candidates: Vec<&String> = index
         .releases
         .iter()
-        .filter(|(v, files)| {
-            version_matches(v, req) && files.iter().any(|f| !f.yanked)
-        })
+        .filter(|(v, files)| version_matches(v, req) && files.iter().any(|f| !f.yanked))
         .map(|(v, _)| v)
         .collect();
     candidates.sort_by_key(|v| version_key(v));
@@ -187,9 +185,7 @@ fn select_version(index: &PyPiIndex, version_req: Option<&str>) -> Result<String
 fn select_wheel(files: &[PyPiFile]) -> Result<&PyPiFile> {
     for tags in wheel_tags()? {
         let found = files.iter().find(|f| {
-            !f.yanked
-                && f.filename.ends_with(".whl")
-                && tags.iter().all(|t| f.filename.contains(t))
+            !f.yanked && f.filename.ends_with(".whl") && tags.iter().all(|t| f.filename.contains(t))
         });
         if let Some(file) = found {
             return Ok(file);
@@ -216,8 +212,7 @@ fn version_key(version: &str) -> Vec<u64> {
 }
 
 fn client_builder() -> reqwest::blocking::ClientBuilder {
-    reqwest::blocking::Client::builder()
-        .user_agent(format!("ordo/{}", env!("CARGO_PKG_VERSION")))
+    reqwest::blocking::Client::builder().user_agent(format!("ordo/{}", env!("CARGO_PKG_VERSION")))
 }
 
 #[cfg(test)]

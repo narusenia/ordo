@@ -4,6 +4,7 @@ pub mod check;
 pub mod clean;
 pub mod context;
 pub mod fmt;
+pub mod generate;
 pub mod init;
 pub mod lint;
 pub mod lock;
@@ -380,6 +381,8 @@ pub enum ImportSource {
 
 #[derive(Subcommand)]
 pub enum GenerateTarget {
+    /// Generate .clang-format from the project's fmt style
+    ClangFormat,
     /// Generate CMakeLists.txt
     Cmake,
     /// Generate CMakePresets.json

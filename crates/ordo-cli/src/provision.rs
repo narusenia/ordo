@@ -47,10 +47,8 @@ fn confirm(tool: Tool) -> bool {
     let mut term = Term::default();
     let mut theme = MinimalTheme::default();
     let mut p = Promptuity::new(&mut term, &mut theme);
-    p.prompt(
-        Confirm::new(format!("Install {} via Arsenal?", tool.name())).with_default(true),
-    )
-    .unwrap_or(false)
+    p.prompt(Confirm::new(format!("Install {} via Arsenal?", tool.name())).with_default(true))
+        .unwrap_or(false)
 }
 
 fn missing_reason(tool: Tool, version_req: Option<&str>) -> String {
@@ -89,8 +87,6 @@ mod tests {
     #[test]
     fn install_hint_names_the_tool_command() {
         assert!(install_hint(Tool::Ninja).contains("ordo toolchain install ninja"));
-        assert!(
-            install_hint(Tool::ClangFormat).contains("ordo toolchain install clang-format")
-        );
+        assert!(install_hint(Tool::ClangFormat).contains("ordo toolchain install clang-format"));
     }
 }

@@ -200,7 +200,11 @@ impl StyleSource {
 /// Writing a `.clang-format` into the project would shadow one sitting in a
 /// parent directory — in a workspace that silently overrides the root style
 /// for every member.
-fn style_arg(project_root: &Path, style_override: Option<&str>, tool: &Path) -> Result<StyleSource> {
+fn style_arg(
+    project_root: &Path,
+    style_override: Option<&str>,
+    tool: &Path,
+) -> Result<StyleSource> {
     if find_style_file(project_root).is_some() {
         return Ok(StyleSource::Discovered);
     }
@@ -396,7 +400,10 @@ mod tests {
 
     #[test]
     fn version_satisfies_ignores_missing_pin() {
-        assert!(version_satisfies(Path::new("/nonexistent/clang-format"), None));
+        assert!(version_satisfies(
+            Path::new("/nonexistent/clang-format"),
+            None
+        ));
         assert!(!version_satisfies(
             Path::new("/nonexistent/clang-format"),
             Some("23")

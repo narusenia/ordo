@@ -270,7 +270,9 @@ pub fn resolve_tool_path(tool: Tool, version_req: Option<&str>) -> Option<PathBu
     let path = which_in_path(binary_name(tool))?;
     match version_req {
         None => Some(path),
-        Some(req) => version_of(&path).filter(|v| version_matches(v, req)).map(|_| path),
+        Some(req) => version_of(&path)
+            .filter(|v| version_matches(v, req))
+            .map(|_| path),
     }
 }
 

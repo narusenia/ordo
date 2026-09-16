@@ -581,20 +581,17 @@ fn build_test_link_flags(
     }
 }
 
-fn resolve_ninja_bin(version_req: Option<&str>) -> Option<PathBuf> {
-    ordo_arsenal::resolve_tool_path(ordo_arsenal::Tool::Ninja, version_req)
-}
-
 fn invoke_ninja(
     build_dir: &Path,
     jobs: Option<u32>,
     manifest_ninja_version: Option<&str>,
     ctx: &Context,
 ) -> Result<()> {
-    let ninja_bin = match resolve_ninja_bin(manifest_ninja_version) {
-        Some(path) => path,
-        None => crate::build::auto_provision_ninja(manifest_ninja_version, ctx)?,
-    };
+    let ninja_bin = crate::provision::resolve_or_provision(
+        ordo_arsenal::Tool::Ninja,
+        manifest_ninja_version,
+        ctx,
+    )?;
     let mut cmd = Command::new(&ninja_bin);
     cmd.arg("-C").arg(build_dir);
 

@@ -8,6 +8,7 @@ pub mod init;
 pub mod lint;
 pub mod lock;
 pub mod new;
+pub(crate) mod provision;
 pub mod run;
 pub mod run_script;
 pub mod style;

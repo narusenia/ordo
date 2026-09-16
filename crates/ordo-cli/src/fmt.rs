@@ -226,14 +226,16 @@ fn style_arg(
     })
 }
 
-/// Look for a `.clang-format` in this directory or any ancestor, the same way
-/// clang-format itself does.
+/// Look for a style file in this directory or any ancestor, the same way
+/// clang-format itself does — it accepts either spelling of the name.
 fn find_style_file(start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(current) = dir {
-        let candidate = current.join(".clang-format");
-        if candidate.exists() {
-            return Some(candidate);
+        for name in [".clang-format", "_clang-format"] {
+            let candidate = current.join(name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
         dir = current.parent();
     }
@@ -396,6 +398,16 @@ mod tests {
 
         let style = style_arg(&project, None, Path::new("/nonexistent/clang-format")).unwrap();
         assert!(style.arg().is_none());
+    }
+
+    #[test]
+    fn find_style_file_accepts_underscore_spelling() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        let style = root.join("_clang-format");
+        fs::write(&style, DEFAULT_STYLE).unwrap();
+
+        assert_eq!(find_style_file(root), Some(style));
     }
 
     #[test]

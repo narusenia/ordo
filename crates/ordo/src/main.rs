@@ -172,8 +172,8 @@ fn main() -> Result<()> {
         Command::Import { .. } => {
             eprintln!("ordo import: not yet implemented");
         }
-        Command::Generate { .. } => {
-            eprintln!("ordo generate: not yet implemented");
+        Command::Generate { target } => {
+            ordo_cli::generate::run(&target, &ctx)?;
         }
         Command::Toolchain { command } => {
             ordo_cli::toolchain::run(&command, &ctx)?;

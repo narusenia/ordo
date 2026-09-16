@@ -1,4 +1,5 @@
-//! Arsenal — toolchain manager for Ordo. **Beta**: manages external tool binaries (Ninja).
+//! Arsenal — toolchain manager for Ordo. **Beta**: manages external tool binaries
+//! (Ninja, clang-format).
 
 mod platform;
 mod registry;
@@ -7,21 +8,26 @@ use miette::{IntoDiagnostic, Result, bail};
 use ordo_core::paths::OrdoPaths;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use platform::platform_asset_name;
-use registry::{fetch_latest_release, fetch_release_by_tag};
+use registry::resolve_release;
 
 /// Supported tools that Arsenal can manage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     Ninja,
+    ClangFormat,
 }
 
 impl Tool {
+    /// Every tool Arsenal knows about.
+    pub const ALL: [Tool; 2] = [Tool::Ninja, Tool::ClangFormat];
+
     /// Parse a tool name string into a Tool variant.
     pub fn parse(name: &str) -> Option<Tool> {
         match name.to_lowercase().as_str() {
             "ninja" => Some(Tool::Ninja),
+            "clang-format" | "clang_format" | "clangformat" => Some(Tool::ClangFormat),
             _ => None,
         }
     }
@@ -30,7 +36,17 @@ impl Tool {
     pub fn name(&self) -> &'static str {
         match self {
             Tool::Ninja => "ninja",
+            Tool::ClangFormat => "clang-format",
         }
+    }
+
+    /// Comma-separated list of tool names, for error messages.
+    pub fn supported_names() -> String {
+        Tool::ALL
+            .iter()
+            .map(|t| t.name())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -76,19 +92,13 @@ impl Arsenal {
         version: Option<&str>,
         on_progress: &dyn Fn(&str),
     ) -> Result<InstalledTool> {
-        let release = match version {
-            Some(v) => {
-                let tag = normalize_tag(tool, v);
-                on_progress(&format!("Fetching release {} for {}...", tag, tool.name()));
-                fetch_release_by_tag(tool, &tag)?
-            }
-            None => {
-                on_progress(&format!("Fetching latest release for {}...", tool.name()));
-                fetch_latest_release(tool)?
-            }
-        };
+        match version {
+            Some(v) => on_progress(&format!("Fetching {} v{} ...", tool.name(), v)),
+            None => on_progress(&format!("Fetching latest release for {}...", tool.name())),
+        }
+        let release = resolve_release(tool, version)?;
 
-        let version = extract_version(tool, &release.tag_name);
+        let version = release.version;
         let install_dir = self.tool_version_dir(tool, &version);
 
         // Already installed?
@@ -102,23 +112,13 @@ impl Arsenal {
             });
         }
 
-        // Find the right asset for this platform
-        let asset_name = platform_asset_name(tool)?;
-        let asset = release
-            .assets
-            .iter()
-            .find(|a| a.name == asset_name)
-            .ok_or_else(|| {
-                miette::miette!(
-                    "no matching asset '{}' found in release {}",
-                    asset_name,
-                    release.tag_name
-                )
-            })?;
-
         // Download
-        on_progress(&format!("Downloading {}...", asset.name));
-        let zip_bytes = download_asset(&asset.browser_download_url)?;
+        on_progress(&format!("Downloading {} v{}...", tool.name(), version));
+        let zip_bytes = download_asset(&release.url)?;
+
+        if let Some(expected) = &release.sha256 {
+            verify_sha256(&zip_bytes, expected)?;
+        }
 
         // Extract
         on_progress(&format!("Extracting to {}...", install_dir.display()));
@@ -159,7 +159,7 @@ impl Arsenal {
         let mut installed = Vec::new();
 
         // For each known tool
-        for tool in [Tool::Ninja] {
+        for tool in Tool::ALL {
             let tool_dir = self.toolchains_dir.join(tool.name());
             if !tool_dir.exists() {
                 continue;
@@ -249,8 +249,7 @@ impl Arsenal {
 
     /// Query the latest remote version for a tool.
     pub fn latest_remote_version(&self, tool: Tool) -> Result<String> {
-        let release = fetch_latest_release(tool)?;
-        Ok(extract_version(tool, &release.tag_name))
+        Ok(resolve_release(tool, None)?.version)
     }
 
     fn tool_version_dir(&self, tool: Tool, version: &str) -> PathBuf {
@@ -266,27 +265,63 @@ pub fn resolve_tool_path(tool: Tool, version_req: Option<&str>) -> Option<PathBu
         return Some(path);
     }
 
-    // Fall back to system PATH
-    let bin_name = binary_name(tool);
-    which_in_path(bin_name)
+    // Fall back to system PATH. A pinned version has to hold there too —
+    // silently using whatever is on PATH would make the pin meaningless.
+    // With a pin, keep walking PATH: an older copy earlier in PATH should not
+    // hide a matching one further along.
+    let candidates = which_all_in_path(binary_name(tool));
+    match version_req {
+        None => candidates.into_iter().next(),
+        Some(req) => candidates
+            .into_iter()
+            .find(|path| version_of(path).is_some_and(|v| version_matches(&v, req))),
+    }
 }
 
-fn which_in_path(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
-    let separator = if cfg!(windows) { ';' } else { ':' };
-    for dir in path_var.split(separator) {
-        let candidate = Path::new(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
+/// Ask a tool binary for its version by running `--version`.
+/// Returns the first dotted-numeric token, which covers both bare output
+/// ("1.13.2") and prefixed output ("clang-format version 23.1.1").
+pub fn version_of(binary: &Path) -> Option<String> {
+    let output = Command::new(binary).arg("--version").output().ok()?;
+    if !output.status.success() {
+        return None;
     }
-    None
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_version(&text)
+}
+
+fn parse_version(text: &str) -> Option<String> {
+    text.split_whitespace()
+        .find(|token| token.starts_with(|c: char| c.is_ascii_digit()))
+        .map(|token| {
+            token
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect::<String>()
+        })
+        .map(|v| v.trim_end_matches('.').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn which_all_in_path(name: &str) -> Vec<PathBuf> {
+    which_all_in(name, &std::env::var("PATH").unwrap_or_default())
+}
+
+/// Every existing `name` across the directories of a PATH string, in order.
+fn which_all_in(name: &str, path_var: &str) -> Vec<PathBuf> {
+    let separator = if cfg!(windows) { ';' } else { ':' };
+
+    path_var
+        .split(separator)
+        .map(|dir| Path::new(dir).join(name))
+        .filter(|candidate| candidate.exists())
+        .collect()
 }
 
 /// Simple prefix-based version matching.
 /// "1.12" matches "1.12.1", "1.12.0", "1.12", etc.
 /// Exact matches also work: "1.12.1" matches "1.12.1".
-fn version_matches(installed: &str, requirement: &str) -> bool {
+pub(crate) fn version_matches(installed: &str, requirement: &str) -> bool {
     if installed == requirement {
         return true;
     }
@@ -299,30 +334,27 @@ fn version_matches(installed: &str, requirement: &str) -> bool {
 }
 
 fn binary_name(tool: Tool) -> &'static str {
-    match tool {
-        Tool::Ninja => {
-            if cfg!(windows) {
-                "ninja.exe"
-            } else {
-                "ninja"
-            }
-        }
+    match (tool, cfg!(windows)) {
+        (Tool::Ninja, true) => "ninja.exe",
+        (Tool::Ninja, false) => "ninja",
+        (Tool::ClangFormat, true) => "clang-format.exe",
+        (Tool::ClangFormat, false) => "clang-format",
     }
 }
 
-/// Normalize a version string to a GitHub tag format.
-fn normalize_tag(tool: Tool, version: &str) -> String {
-    match tool {
-        Tool::Ninja => {
-            let v = version.strip_prefix('v').unwrap_or(version);
-            format!("v{v}")
-        }
-    }
-}
+/// Verify a download against the digest published by the registry.
+fn verify_sha256(bytes: &[u8], expected: &str) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    let actual: String = Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
-/// Extract version string from a tag name.
-fn extract_version(_tool: Tool, tag: &str) -> String {
-    tag.strip_prefix('v').unwrap_or(tag).to_string()
+    if !actual.eq_ignore_ascii_case(expected) {
+        bail!("download failed integrity check: expected sha256 {expected}, got {actual}");
+    }
+
+    Ok(())
 }
 
 /// Download an asset from a URL. Returns the raw bytes.
@@ -334,7 +366,8 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
 
     let response = client.get(url).send().into_diagnostic()?;
 
-    if response.status() == reqwest::StatusCode::FORBIDDEN {
+    // Only GitHub answers 403 with a rate limit a token would lift.
+    if response.status() == reqwest::StatusCode::FORBIDDEN && url.contains("github.com") {
         bail!(
             "GitHub API rate limit exceeded. Try again later or set GITHUB_TOKEN environment variable."
         );
@@ -444,15 +477,83 @@ mod tests {
     }
 
     #[test]
-    fn normalize_tag_ninja() {
-        assert_eq!(normalize_tag(Tool::Ninja, "1.12.1"), "v1.12.1");
-        assert_eq!(normalize_tag(Tool::Ninja, "v1.12.1"), "v1.12.1");
+    fn parse_version_bare_output() {
+        assert_eq!(parse_version("1.13.2\n").as_deref(), Some("1.13.2"));
     }
 
     #[test]
-    fn extract_version_strips_v() {
-        assert_eq!(extract_version(Tool::Ninja, "v1.12.1"), "1.12.1");
-        assert_eq!(extract_version(Tool::Ninja, "1.12.1"), "1.12.1");
+    fn parse_version_prefixed_output() {
+        assert_eq!(
+            parse_version("clang-format version 23.1.1\n").as_deref(),
+            Some("23.1.1")
+        );
+    }
+
+    #[test]
+    fn parse_version_strips_trailing_junk() {
+        assert_eq!(parse_version("1.12.1.git\n").as_deref(), Some("1.12.1"));
+        assert_eq!(
+            parse_version("clang-format version 17.0.6-rc1\n").as_deref(),
+            Some("17.0.6")
+        );
+    }
+
+    #[test]
+    fn parse_version_without_number() {
+        assert_eq!(parse_version("unknown build\n"), None);
+    }
+
+    #[test]
+    fn verify_sha256_accepts_matching_digest() {
+        // sha256 of "ordo"
+        let expected = "b6e1b1a4e5b0d3b8b9a0b2e6cbf1b0b6b58ba2a06ba5a3b6a1e4b7a07e2a0e1f";
+        assert!(verify_sha256(b"ordo", expected).is_err());
+
+        use sha2::{Digest, Sha256};
+        let actual: String = Sha256::digest(b"ordo")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert!(verify_sha256(b"ordo", &actual).is_ok());
+        assert!(verify_sha256(b"ordo", &actual.to_uppercase()).is_ok());
+    }
+
+    #[test]
+    fn which_all_in_returns_every_match_in_order() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let first = tmp.path().join("first");
+        let second = tmp.path().join("second");
+        let empty = tmp.path().join("empty");
+        for dir in [&first, &second, &empty] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(first.join("tool"), b"fake").unwrap();
+        fs::write(second.join("tool"), b"fake").unwrap();
+
+        let separator = if cfg!(windows) { ";" } else { ":" };
+        let path_var = [&empty, &first, &second]
+            .map(|d| d.display().to_string())
+            .join(separator);
+
+        let found = which_all_in("tool", &path_var);
+        assert_eq!(found, vec![first.join("tool"), second.join("tool")]);
+    }
+
+    #[test]
+    fn tool_parse_clang_format() {
+        assert_eq!(Tool::parse("clang-format"), Some(Tool::ClangFormat));
+        assert_eq!(Tool::parse("clang_format"), Some(Tool::ClangFormat));
+        assert_eq!(Tool::parse("Clang-Format"), Some(Tool::ClangFormat));
+    }
+
+    #[test]
+    fn binary_name_clang_format() {
+        let name = binary_name(Tool::ClangFormat);
+        if cfg!(windows) {
+            assert_eq!(name, "clang-format.exe");
+        } else {
+            assert_eq!(name, "clang-format");
+        }
     }
 
     #[test]
@@ -555,13 +656,18 @@ mod tests {
     }
 
     #[test]
-    fn platform_detection_returns_asset() {
-        // This just verifies platform_asset_name doesn't error on this platform
-        let result = platform_asset_name(Tool::Ninja);
-        assert!(
-            result.is_ok(),
-            "platform_asset_name failed: {:?}",
-            result.err()
-        );
+    fn list_reports_every_known_tool() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        for tool in Tool::ALL {
+            let dir = tmp.path().join(tool.name()).join("1.0.0");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(binary_name(tool)), b"fake").unwrap();
+        }
+
+        let arsenal = Arsenal::with_dir(tmp.path().to_path_buf());
+        assert_eq!(arsenal.list().len(), Tool::ALL.len());
+        for tool in Tool::ALL {
+            assert!(arsenal.which(tool, None).is_some(), "{}", tool.name());
+        }
     }
 }

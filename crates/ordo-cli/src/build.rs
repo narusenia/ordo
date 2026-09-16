@@ -1297,51 +1297,6 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
-fn resolve_ninja_bin(version_req: Option<&str>) -> Option<PathBuf> {
-    ordo_arsenal::resolve_tool_path(ordo_arsenal::Tool::Ninja, version_req)
-}
-
-pub(crate) fn auto_provision_ninja(version_req: Option<&str>, ui: &Context) -> Result<PathBuf> {
-    ui.style.warn(
-        "Warning",
-        "ninja not found — required for the Ninja build engine",
-    );
-
-    let should_install = if std::env::var("ORDO_YES").is_ok() || std::env::var("CI").is_ok() {
-        true
-    } else {
-        use promptuity::prompts::Confirm;
-        use promptuity::themes::MinimalTheme;
-        use promptuity::{Promptuity, Term};
-
-        let mut term = Term::default();
-        let mut theme = MinimalTheme::default();
-        let mut p = Promptuity::new(&mut term, &mut theme);
-        p.prompt(Confirm::new("Install Ninja via Arsenal?").with_default(true))
-            .unwrap_or(false)
-    };
-
-    if !should_install {
-        bail!(
-            "ninja not found — install it with `ordo toolchain install ninja` or switch to `[build] engine = \"faber\"`"
-        );
-    }
-
-    let arsenal = ordo_arsenal::Arsenal::new();
-    let installed = arsenal.install(
-        ordo_arsenal::Tool::Ninja,
-        version_req.map(|v| v.to_string()).as_deref(),
-        &|msg| {
-            ui.style.success("Arsenal", msg);
-        },
-    )?;
-
-    ui.style
-        .success("Installed", &format!("ninja v{}", installed.version));
-
-    Ok(installed.path)
-}
-
 fn invoke_ninja(
     build_dir: &Path,
     jobs: Option<u32>,
@@ -1351,10 +1306,11 @@ fn invoke_ninja(
 ) -> Result<()> {
     use crate::style::BuildStep;
 
-    let ninja_bin = match resolve_ninja_bin(manifest_ninja_version) {
-        Some(path) => path,
-        None => auto_provision_ninja(manifest_ninja_version, ui)?,
-    };
+    let ninja_bin = crate::provision::resolve_or_provision(
+        ordo_arsenal::Tool::Ninja,
+        manifest_ninja_version,
+        ui,
+    )?;
     let mut cmd = Command::new(&ninja_bin);
     cmd.arg("-C").arg(build_dir);
 

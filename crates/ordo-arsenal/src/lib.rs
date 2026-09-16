@@ -366,7 +366,8 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
 
     let response = client.get(url).send().into_diagnostic()?;
 
-    if response.status() == reqwest::StatusCode::FORBIDDEN {
+    // Only GitHub answers 403 with a rate limit a token would lift.
+    if response.status() == reqwest::StatusCode::FORBIDDEN && url.contains("github.com") {
         bail!(
             "GitHub API rate limit exceeded. Try again later or set GITHUB_TOKEN environment variable."
         );

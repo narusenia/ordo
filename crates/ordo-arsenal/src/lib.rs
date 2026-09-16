@@ -8,6 +8,7 @@ use miette::{IntoDiagnostic, Result, bail};
 use ordo_core::paths::OrdoPaths;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use registry::resolve_release;
 
@@ -264,9 +265,38 @@ pub fn resolve_tool_path(tool: Tool, version_req: Option<&str>) -> Option<PathBu
         return Some(path);
     }
 
-    // Fall back to system PATH
-    let bin_name = binary_name(tool);
-    which_in_path(bin_name)
+    // Fall back to system PATH. A pinned version has to hold there too —
+    // silently using whatever is on PATH would make the pin meaningless.
+    let path = which_in_path(binary_name(tool))?;
+    match version_req {
+        None => Some(path),
+        Some(req) => version_of(&path).filter(|v| version_matches(v, req)).map(|_| path),
+    }
+}
+
+/// Ask a tool binary for its version by running `--version`.
+/// Returns the first dotted-numeric token, which covers both bare output
+/// ("1.13.2") and prefixed output ("clang-format version 23.1.1").
+pub fn version_of(binary: &Path) -> Option<String> {
+    let output = Command::new(binary).arg("--version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_version(&text)
+}
+
+fn parse_version(text: &str) -> Option<String> {
+    text.split_whitespace()
+        .find(|token| token.starts_with(|c: char| c.is_ascii_digit()))
+        .map(|token| {
+            token
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect::<String>()
+        })
+        .map(|v| v.trim_end_matches('.').to_string())
+        .filter(|v| !v.is_empty())
 }
 
 fn which_in_path(name: &str) -> Option<PathBuf> {
@@ -436,6 +466,33 @@ mod tests {
     #[test]
     fn version_matches_full_version_as_prefix() {
         assert!(version_matches("1.12", "1.12"));
+    }
+
+    #[test]
+    fn parse_version_bare_output() {
+        assert_eq!(parse_version("1.13.2\n").as_deref(), Some("1.13.2"));
+    }
+
+    #[test]
+    fn parse_version_prefixed_output() {
+        assert_eq!(
+            parse_version("clang-format version 23.1.1\n").as_deref(),
+            Some("23.1.1")
+        );
+    }
+
+    #[test]
+    fn parse_version_strips_trailing_junk() {
+        assert_eq!(parse_version("1.12.1.git\n").as_deref(), Some("1.12.1"));
+        assert_eq!(
+            parse_version("clang-format version 17.0.6-rc1\n").as_deref(),
+            Some("17.0.6")
+        );
+    }
+
+    #[test]
+    fn parse_version_without_number() {
+        assert_eq!(parse_version("unknown build\n"), None);
     }
 
     #[test]

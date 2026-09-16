@@ -3,14 +3,17 @@ use miette::{IntoDiagnostic, Result, bail};
 use ordo_core::manifest::Manifest;
 use ordo_core::workspace::Workspace;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DEFAULT_STYLE: &str = "BasedOnStyle: LLVM
+pub(crate) const DEFAULT_STYLE: &str = "BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 100
 ";
 
+/// `--style=file:<path>` landed in clang-format 14.
+const MIN_STYLE_FILE_VERSION: u32 = 14;
 
 pub fn run(check: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let project_root = std::env::current_dir().into_diagnostic()?;
@@ -83,7 +86,7 @@ fn run_single_fmt(
     }
 
     let tool = resolve_tool(manifest, ctx)?;
-    let _style_file = ensure_style_file(project_root, fmt_config.style.as_deref())?;
+    let style = style_arg(project_root, fmt_config.style.as_deref(), &tool)?;
 
     let pkg_name = manifest
         .package
@@ -99,9 +102,9 @@ fn run_single_fmt(
     ));
 
     let result = if check {
-        run_check_inner(&tool, None, &sources)
+        run_check_inner(&tool, style.arg(), &sources)
     } else {
-        run_format_inner(&tool, None, &sources)
+        run_format_inner(&tool, style.arg(), &sources)
     };
 
     spinner.finish_and_clear();
@@ -171,15 +174,89 @@ fn run_check_inner(tool: &Path, style: Option<&str>, sources: &[PathBuf]) -> Res
     Ok(())
 }
 
-fn ensure_style_file(project_root: &Path, style_override: Option<&str>) -> Result<Option<PathBuf>> {
-    let style_path = project_root.join(".clang-format");
-    if style_path.exists() {
-        return Ok(None);
+/// How the style for one run is supplied to clang-format.
+enum StyleSource {
+    /// A `.clang-format` exists here or above; let clang-format find it.
+    Discovered,
+    /// No file in the tree — hand clang-format a throwaway one.
+    /// The handle keeps the file alive for the duration of the run.
+    TempFile {
+        arg: String,
+        _file: tempfile::NamedTempFile,
+    },
+}
+
+impl StyleSource {
+    fn arg(&self) -> Option<&str> {
+        match self {
+            StyleSource::Discovered => None,
+            StyleSource::TempFile { arg, .. } => Some(arg),
+        }
+    }
+}
+
+/// Decide where the style comes from, without writing anything into the project.
+///
+/// Writing a `.clang-format` into the project would shadow one sitting in a
+/// parent directory — in a workspace that silently overrides the root style
+/// for every member.
+fn style_arg(project_root: &Path, style_override: Option<&str>, tool: &Path) -> Result<StyleSource> {
+    if find_style_file(project_root).is_some() {
+        return Ok(StyleSource::Discovered);
     }
 
-    let content = style_override.unwrap_or(DEFAULT_STYLE);
-    fs::write(&style_path, content).into_diagnostic()?;
-    Ok(Some(style_path))
+    require_style_file_support(tool)?;
+
+    let mut file = tempfile::Builder::new()
+        .prefix("ordo-clang-format-")
+        .suffix(".yaml")
+        .tempfile()
+        .into_diagnostic()?;
+    file.write_all(style_override.unwrap_or(DEFAULT_STYLE).as_bytes())
+        .into_diagnostic()?;
+    file.flush().into_diagnostic()?;
+
+    Ok(StyleSource::TempFile {
+        arg: format!("--style=file:{}", file.path().display()),
+        _file: file,
+    })
+}
+
+/// Look for a `.clang-format` in this directory or any ancestor, the same way
+/// clang-format itself does.
+fn find_style_file(start: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(current) = dir {
+        let candidate = current.join(".clang-format");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        dir = current.parent();
+    }
+    None
+}
+
+fn require_style_file_support(tool: &Path) -> Result<()> {
+    let Some(version) = ordo_arsenal::version_of(tool) else {
+        // Unknown version: let clang-format speak for itself.
+        return Ok(());
+    };
+
+    let major: u32 = version
+        .split('.')
+        .next()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(0);
+
+    if major != 0 && major < MIN_STYLE_FILE_VERSION {
+        bail!(
+            "clang-format {version} is too old — Ordo needs {MIN_STYLE_FILE_VERSION} or newer to \
+             pass a style without writing one into your project. Upgrade it with \
+             `ordo toolchain install clang-format`, or commit a .clang-format to the project."
+        );
+    }
+
+    Ok(())
 }
 
 fn discover_formattable_sources(project_root: &Path) -> Result<Vec<PathBuf>> {
@@ -266,6 +343,56 @@ fn version_satisfies(tool: &Path, pin: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_style_file_walks_up() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        let member = root.join("crates").join("core");
+        fs::create_dir_all(&member).unwrap();
+
+        assert!(find_style_file(&member).is_none());
+
+        let root_style = root.join(".clang-format");
+        fs::write(&root_style, DEFAULT_STYLE).unwrap();
+        assert_eq!(find_style_file(&member), Some(root_style));
+    }
+
+    #[test]
+    fn find_style_file_prefers_the_closest() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        let member = root.join("member");
+        fs::create_dir_all(&member).unwrap();
+        fs::write(root.join(".clang-format"), DEFAULT_STYLE).unwrap();
+        let member_style = member.join(".clang-format");
+        fs::write(&member_style, DEFAULT_STYLE).unwrap();
+
+        assert_eq!(find_style_file(&member), Some(member_style));
+    }
+
+    #[test]
+    fn style_arg_writes_nothing_into_the_project() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = tmp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+
+        // A tool path that cannot be run: the version probe gives up and the
+        // style still resolves to a throwaway file.
+        let style = style_arg(&project, None, Path::new("/nonexistent/clang-format")).unwrap();
+        assert!(style.arg().unwrap().starts_with("--style=file:"));
+        assert!(!project.join(".clang-format").exists());
+    }
+
+    #[test]
+    fn style_arg_defers_to_an_existing_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = tmp.path().to_path_buf();
+        fs::write(project.join(".clang-format"), DEFAULT_STYLE).unwrap();
+
+        let style = style_arg(&project, None, Path::new("/nonexistent/clang-format")).unwrap();
+        assert!(style.arg().is_none());
+    }
 
     #[test]
     fn version_satisfies_ignores_missing_pin() {

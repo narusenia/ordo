@@ -16,8 +16,13 @@ pub fn run(command: &ToolchainCommand, ctx: &Context) -> Result<()> {
 }
 
 fn parse_tool(name: &str) -> Result<Tool> {
-    Tool::parse(name)
-        .ok_or_else(|| miette::miette!("unknown tool '{}'. Supported tools: ninja", name))
+    Tool::parse(name).ok_or_else(|| {
+        miette::miette!(
+            "unknown tool '{}'. Supported tools: {}",
+            name,
+            Tool::supported_names()
+        )
+    })
 }
 
 fn run_install(tool_name: &str, version: Option<&str>, ctx: &Context) -> Result<()> {
@@ -120,12 +125,24 @@ fn run_clean(ctx: &Context) -> Result<()> {
 }
 
 fn run_update(tool_name: Option<&str>, ctx: &Context) -> Result<()> {
+    let arsenal = Arsenal::new();
+
+    // Without a tool name, update what is installed rather than installing
+    // every tool Arsenal knows about.
     let tools: Vec<Tool> = match tool_name {
         Some(name) => vec![parse_tool(name)?],
-        None => vec![Tool::Ninja],
+        None => {
+            let installed: Vec<Tool> = Tool::ALL
+                .into_iter()
+                .filter(|t| arsenal.which(*t, None).is_some())
+                .collect();
+            if installed.is_empty() {
+                ctx.style.warn("Info", "No tools installed via Arsenal");
+                return Ok(());
+            }
+            installed
+        }
     };
-
-    let arsenal = Arsenal::new();
 
     for tool in tools {
         let sw = ctx
@@ -162,5 +179,6 @@ fn load_manifest_tool_version(tool: Tool) -> Option<String> {
     let manifest = Manifest::load(&manifest_path).ok()?;
     match tool {
         Tool::Ninja => manifest.toolchain.ninja,
+        Tool::ClangFormat => manifest.toolchain.clang_format,
     }
 }

@@ -29,6 +29,8 @@ This is the canonical reference for the `Ordo.toml` manifest format.
 |-------|------|----------|---------|-------------|
 | `compiler` | string | No | auto-detect | `"clang"`, `"gcc"`, `"msvc"`, `"clang-cl"` |
 | `linker` | string | No | compiler default | `"lld"`, `"mold"`, `"gold"`, `"default"` |
+| `ninja` | string | No | latest | Ninja version managed by Arsenal, e.g. `"1.12"` |
+| `clang-format` | string | No | latest | clang-format version managed by Arsenal, e.g. `"23"` |
 
 ### [modules]
 
@@ -115,7 +117,7 @@ prefix = "MYAPP_"              # default: "ORDO_FEATURE_"
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `tool` | string | No | `"clang-format"` | Formatting tool |
-| `style` | string | No | `".clang-format"` | Style config file path |
+| `style` | string | No | Ordo defaults | Inline clang-format YAML used when the project has no `.clang-format` |
 
 ### [lint]
 

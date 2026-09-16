@@ -8,10 +8,13 @@
 - **Acceptance Criteria**:
   - [ ] Default behavior: rewrites files in-place
   - [ ] `--check` flag: reports formatting differences without modifying files (CI mode)
-  - [ ] Uses `.clang-format` from project root if present
-  - [ ] Falls back to Ordo's built-in sensible defaults if no `.clang-format` exists
+  - [ ] Uses `.clang-format` from the project root or any ancestor directory if present
+  - [ ] Falls back to Ordo's built-in sensible defaults if no `.clang-format` exists, passing them to clang-format without writing a file into the project
+  - [ ] `ordo generate clang-format` materializes those defaults as a `.clang-format` on request
   - [ ] Processes all C/C++ sources in `src/`, `include/`, `tests/`
-  - [ ] Configurable via `[fmt] tool = "clang-format"`, `style = ".clang-format"`
+  - [ ] Configurable via `[fmt] tool = "clang-format"`, `style = "<inline YAML>"`
+  - [ ] Resolves clang-format from Arsenal, then `PATH`, then Xcode, and offers to install it when missing
+  - [ ] Honors a `[toolchain] clang-format` version pin against every candidate
   - [ ] Returns non-zero exit code when `--check` finds differences
 
 ## REQ-QUAL-002: Lint Command

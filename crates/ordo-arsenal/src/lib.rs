@@ -267,12 +267,14 @@ pub fn resolve_tool_path(tool: Tool, version_req: Option<&str>) -> Option<PathBu
 
     // Fall back to system PATH. A pinned version has to hold there too —
     // silently using whatever is on PATH would make the pin meaningless.
-    let path = which_in_path(binary_name(tool))?;
+    // With a pin, keep walking PATH: an older copy earlier in PATH should not
+    // hide a matching one further along.
+    let candidates = which_all_in_path(binary_name(tool));
     match version_req {
-        None => Some(path),
-        Some(req) => version_of(&path)
-            .filter(|v| version_matches(v, req))
-            .map(|_| path),
+        None => candidates.into_iter().next(),
+        Some(req) => candidates
+            .into_iter()
+            .find(|path| version_of(path).is_some_and(|v| version_matches(&v, req))),
     }
 }
 
@@ -301,16 +303,19 @@ fn parse_version(text: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-fn which_in_path(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
+fn which_all_in_path(name: &str) -> Vec<PathBuf> {
+    which_all_in(name, &std::env::var("PATH").unwrap_or_default())
+}
+
+/// Every existing `name` across the directories of a PATH string, in order.
+fn which_all_in(name: &str, path_var: &str) -> Vec<PathBuf> {
     let separator = if cfg!(windows) { ';' } else { ':' };
-    for dir in path_var.split(separator) {
-        let candidate = Path::new(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+
+    path_var
+        .split(separator)
+        .map(|dir| Path::new(dir).join(name))
+        .filter(|candidate| candidate.exists())
+        .collect()
 }
 
 /// Simple prefix-based version matching.
@@ -510,6 +515,27 @@ mod tests {
             .collect();
         assert!(verify_sha256(b"ordo", &actual).is_ok());
         assert!(verify_sha256(b"ordo", &actual.to_uppercase()).is_ok());
+    }
+
+    #[test]
+    fn which_all_in_returns_every_match_in_order() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let first = tmp.path().join("first");
+        let second = tmp.path().join("second");
+        let empty = tmp.path().join("empty");
+        for dir in [&first, &second, &empty] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(first.join("tool"), b"fake").unwrap();
+        fs::write(second.join("tool"), b"fake").unwrap();
+
+        let separator = if cfg!(windows) { ";" } else { ":" };
+        let path_var = [&empty, &first, &second]
+            .map(|d| d.display().to_string())
+            .join(separator);
+
+        let found = which_all_in("tool", &path_var);
+        assert_eq!(found, vec![first.join("tool"), second.join("tool")]);
     }
 
     #[test]

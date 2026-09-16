@@ -11,6 +11,7 @@ IndentWidth: 4
 ColumnLimit: 100
 ";
 
+
 pub fn run(check: bool, package: Option<&str>, ctx: &Context) -> Result<()> {
     let project_root = std::env::current_dir().into_diagnostic()?;
     let manifest_path = project_root.join("Ordo.toml");
@@ -75,13 +76,13 @@ fn run_single_fmt(
     ctx: &Context,
 ) -> Result<()> {
     let fmt_config = &manifest.fmt;
-    let tool = resolve_tool(fmt_config.tool.as_deref())?;
 
     let sources = discover_formattable_sources(project_root)?;
     if sources.is_empty() {
         return Ok(());
     }
 
+    let tool = resolve_tool(manifest, ctx)?;
     let _style_file = ensure_style_file(project_root, fmt_config.style.as_deref())?;
 
     let pkg_name = manifest
@@ -98,9 +99,9 @@ fn run_single_fmt(
     ));
 
     let result = if check {
-        run_check_inner(&tool, &sources)
+        run_check_inner(&tool, None, &sources)
     } else {
-        run_format_inner(&tool, &sources)
+        run_format_inner(&tool, None, &sources)
     };
 
     spinner.finish_and_clear();
@@ -124,9 +125,12 @@ fn run_single_fmt(
     }
 }
 
-fn run_format_inner(tool: &str, sources: &[PathBuf]) -> Result<()> {
+fn run_format_inner(tool: &Path, style: Option<&str>, sources: &[PathBuf]) -> Result<()> {
     let mut cmd = Command::new(tool);
     cmd.arg("-i");
+    if let Some(style) = style {
+        cmd.arg(style);
+    }
     for src in sources {
         cmd.arg(src);
     }
@@ -143,9 +147,12 @@ fn run_format_inner(tool: &str, sources: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn run_check_inner(tool: &str, sources: &[PathBuf]) -> Result<()> {
+fn run_check_inner(tool: &Path, style: Option<&str>, sources: &[PathBuf]) -> Result<()> {
     let mut cmd = Command::new(tool);
     cmd.arg("--dry-run").arg("--Werror");
+    if let Some(style) = style {
+        cmd.arg(style);
+    }
     for src in sources {
         cmd.arg(src);
     }
@@ -207,33 +214,65 @@ fn is_formattable(path: &Path) -> bool {
     )
 }
 
-fn resolve_tool(configured: Option<&str>) -> Result<String> {
-    if let Some(tool) = configured {
+/// Find the clang-format to run: an explicit `[fmt] tool` wins outright,
+/// otherwise Arsenal's copy, then PATH, then Xcode's, and finally an offer to
+/// install one. A `[toolchain] clang-format` pin is enforced against every
+/// candidate, so pinning actually produces the same formatting everywhere.
+fn resolve_tool(manifest: &Manifest, ctx: &Context) -> Result<PathBuf> {
+    if let Some(tool) = manifest.fmt.tool.as_deref() {
         if Command::new(tool).arg("--version").output().is_ok() {
-            return Ok(tool.to_string());
+            return Ok(PathBuf::from(tool));
         }
         bail!("{tool} not found on PATH");
     }
 
-    if Command::new("clang-format")
-        .arg("--version")
+    let pin = manifest.toolchain.clang_format.as_deref();
+
+    if let Some(path) = ordo_arsenal::resolve_tool_path(ordo_arsenal::Tool::ClangFormat, pin) {
+        return Ok(path);
+    }
+
+    if let Some(path) = xcode_clang_format().filter(|path| version_satisfies(path, pin)) {
+        return Ok(path);
+    }
+
+    crate::provision::resolve_or_provision(ordo_arsenal::Tool::ClangFormat, pin, ctx)
+}
+
+fn xcode_clang_format() -> Option<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+
+    let output = Command::new("xcrun")
+        .args(["--find", "clang-format"])
         .output()
-        .is_ok()
-    {
-        return Ok("clang-format".to_string());
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
 
-    if cfg!(target_os = "macos")
-        && let Ok(output) = Command::new("xcrun")
-            .args(["--find", "clang-format"])
-            .output()
-        && output.status.success()
-    {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path.is_empty() {
-            return Ok(path);
-        }
-    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!path.is_empty()).then(|| PathBuf::from(path))
+}
 
-    bail!("clang-format not found — install it or set [fmt] tool in Ordo.toml")
+fn version_satisfies(tool: &Path, pin: Option<&str>) -> bool {
+    let Some(pin) = pin else {
+        return true;
+    };
+    ordo_arsenal::version_of(tool).is_some_and(|v| v == pin || v.starts_with(&format!("{pin}.")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_satisfies_ignores_missing_pin() {
+        assert!(version_satisfies(Path::new("/nonexistent/clang-format"), None));
+        assert!(!version_satisfies(
+            Path::new("/nonexistent/clang-format"),
+            Some("23")
+        ));
+    }
 }
